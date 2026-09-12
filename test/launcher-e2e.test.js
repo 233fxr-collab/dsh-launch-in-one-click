@@ -8,12 +8,17 @@
  * character. Both produced a launcher that looked correct in every string
  * assertion and failed the moment it ran.
  *
- * Every launcher is decoded with the code page THAT install chose, and asserted
- * against the language THAT install resolved. A launcher runs `chcp`, and a
- * `cmd /c` child shares the console it was started from, so running a launcher
- * changes the code page the next install detects. That is the launcher behaving
- * correctly — it forces its own code page so its own bytes always match — but it
- * makes any single code page cached for the whole file meaningless.
+ * Two rules keep this file meaningful on a shared CI runner:
+ *
+ * - The code page is injected rather than detected. A launcher runs `chcp`, and
+ *   a `cmd /c` child shares the console it was started from, so *running* one
+ *   changes what the next detection sees — including for other test files. The
+ *   real detection path is covered by `doctor.test.js`, which runs against the
+ *   machine without stubs.
+ * - Assertions read the exit code and ASCII fragments, never localized text. The
+ *   exit code is the launcher's contract, and ASCII bytes survive any code page;
+ *   the localized rendering is asserted where it is deterministic, against the
+ *   bytes of the file itself.
  *
  * The port verdicts are exercised against real listeners: a real HTTP server
  * answering like a Harness web server, a real HTTP server that does not, and a
@@ -21,13 +26,13 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import http from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { DSH_FINGERPRINT } from '../src/probe-script.js'
-import { makeDecoder } from '../src/encoding.js'
+import { encodeForCodePage, makeDecoder } from '../src/encoding.js'
 import { EXIT } from '../src/exit-codes.js'
 import { installLauncher } from '../src/install.js'
 import { runCommand } from '../src/run.js'
@@ -54,6 +59,18 @@ async function reserveFreePort() {
   const port = await listen(server)
   await new Promise((resolve) => { server.close(resolve) })
   return port
+}
+
+/** The console code page these launchers are generated for. */
+const FIXED_CODE_PAGE = 936
+
+/** Machine probes stubbed: this file is about the batch file, not the host. */
+function deps(overrides = {}) {
+  return {
+    detectConsoleCodePage: async () => ({ codePage: FIXED_CODE_PAGE, source: 'stub', detail: 'stub' }),
+    runPortProbe: async () => ({ state: 'free', detail: 'free' }),
+    ...overrides,
+  }
 }
 
 before(async () => {
@@ -85,32 +102,33 @@ after(async () => {
 
 /**
  * Install a launcher and return it with the decisions that install made.
- * @returns The path, and the code page, language, and encoding it was written in.
+ * @returns The path, and the code page and language it was written in.
  */
 async function write(fileName, options = {}, overrides = {}) {
   const result = await installLauncher(
     { directory, fileName, workdir: directory, verify: 'none', ...options },
-    overrides,
+    deps(overrides),
   )
   assert.equal(result.ok, true, `install failed: ${String(result.reason)} ${String(result.hint)}`)
   return { path: result.path, codePage: result.codePage, language: result.language, encoding: result.encoding }
 }
 
-/** Run a launcher the way a user would, decoding it the way it was written. */
+/**
+ * Run a launcher the way a user would and return its exit code and text.
+ *
+ * The capture is decoded as latin1: ASCII bytes are identical in every code
+ * page, so the assertions below hold whatever the console does with the
+ * localized lines.
+ */
 async function run(launcher, args = [], env = process.env) {
   const line = `""${launcher.path}"${args.length > 0 ? ` ${args.join(' ')}` : ''}"`
   const result = await runCommand('cmd', ['/c', line], {
     env,
     windowsVerbatimArguments: true,
-    decode: makeDecoder(launcher.codePage),
+    decode: (buffer) => buffer.toString('latin1'),
     timeoutMs: 60000,
   })
   return { code: result.code, output: `${result.stdout}${result.stderr}`, failure: result.failure }
-}
-
-/** Pick the expected text for the language this launcher was generated in. */
-function phrase(launcher, zh, en) {
-  return launcher.language === 'zh' ? zh : en
 }
 
 test('a launcher on a free port plans the run and exits 0', { skip: !windowsOnly }, async () => {
@@ -126,35 +144,28 @@ test('a launcher refuses to start a second instance on the harness port', { skip
   const launcher = await write('harness.bat', { port: harnessPort })
   const result = await run(launcher, ['--dry-run'])
   assert.equal(result.code, EXIT.PORT_DSH, result.output)
-  assert.match(result.output, phrase(launcher, /不会启动第二个实例/, /second one is not started/))
-  assert.match(result.output, /401/)
+  assert.match(result.output, /401/, 'the refusal explains why a bare URL is not the answer')
+  assert.doesNotMatch(result.output, /start "" "http/, 'nothing may open a page that answers 401')
 })
 
 test('a launcher refuses a port held by something else, and names the holder', { skip: !windowsOnly }, async () => {
   const launcher = await write('foreign.bat', { port: foreignPort })
   const result = await run(launcher, ['--dry-run'])
   assert.equal(result.code, EXIT.PORT_FOREIGN, result.output)
-  assert.match(result.output, phrase(launcher, /被其它程序占用/, /held by another program/))
   assert.match(result.output, /PID: \d+/)
 })
 
-test('the launcher prints in the language its code page implies', { skip: !windowsOnly }, async () => {
-  const launcher = await write('lang.bat', { port: freePort })
-  const result = await run(launcher, ['--dry-run'])
-  assert.equal(result.code, EXIT.OK, result.output)
-  if (launcher.language === 'zh') {
-    assert.match(result.output, /试运行结束/, `code page ${String(launcher.codePage)} resolves to Chinese`)
-  } else {
-    assert.match(result.output, /Dry run finished/, `code page ${String(launcher.codePage)} resolves to English`)
-  }
-})
+test('the file itself carries the code page it was written for', { skip: !windowsOnly }, async () => {
+  const launcher = await write('encoding.bat', { port: freePort })
+  const bytes = readFileSync(launcher.path)
+  assert.match(bytes.toString('latin1'), new RegExp(`chcp ${String(FIXED_CODE_PAGE)}`))
 
-test('an explicit language is honoured whatever the console reports', { skip: !windowsOnly }, async () => {
-  const launcher = await write('forced-zh.bat', { port: freePort, language: 'zh' })
+  // The localized text is verified where it is deterministic: the bytes on disk,
+  // decoded the way the launcher tells cmd to decode them.
+  const decoded = makeDecoder(FIXED_CODE_PAGE)(bytes)
+  assert.equal(encodeForCodePage(decoded, FIXED_CODE_PAGE).lossless, true)
+  assert.match(decoded, /试运行结束/, 'a 936 launcher is written in Chinese')
   assert.equal(launcher.language, 'zh')
-  const result = await run(launcher, ['--dry-run'])
-  assert.equal(result.code, EXIT.OK, result.output)
-  assert.match(result.output, /试运行结束/)
 })
 
 test('the runner can be baked as the installed command instead of npx', { skip: !windowsOnly }, async () => {
@@ -163,6 +174,7 @@ test('the runner can be baked as the installed command instead of npx', { skip: 
   // `dsh` is not installed in this test environment, so the environment check
   // is what should stop it — before any port work.
   assert.ok([EXIT.OK, EXIT.NO_NODE].includes(result.code), result.output)
+  assert.match(readFileSync(launcher.path, 'utf8'), /call dsh web --port %PORT%/)
 })
 
 test('--port overrides the baked port and is validated', { skip: !windowsOnly }, async () => {
@@ -206,7 +218,21 @@ test('a host with no node on PATH is reported as such', { skip: !windowsOnly }, 
 
 test('the installed launcher is byte-stable across runs', { skip: !windowsOnly }, async () => {
   const first = await write('stable.bat', { port: freePort })
-  const second = await installLauncher({ directory, fileName: 'stable.bat', workdir: directory, port: freePort, verify: 'none' })
+  const second = await installLauncher(
+    { directory, fileName: 'stable.bat', workdir: directory, port: freePort, verify: 'none' },
+    deps(),
+  )
   assert.equal(second.unchanged, true)
   assert.equal(second.path, first.path)
+})
+
+test('an explicit language is written even when the console cannot print it', { skip: !windowsOnly }, async () => {
+  const launcher = await write('forced-zh.bat', { port: freePort, language: 'zh' }, {
+    detectConsoleCodePage: async () => ({ codePage: 437, source: 'stub', detail: 'stub' }),
+  })
+  assert.equal(launcher.language, 'zh')
+  assert.equal(launcher.encoding, 'utf8')
+  const result = await run(launcher, ['--dry-run'])
+  assert.equal(result.code, EXIT.OK, result.output)
+  assert.match(readFileSync(launcher.path, 'utf8'), /试运行结束/)
 })
