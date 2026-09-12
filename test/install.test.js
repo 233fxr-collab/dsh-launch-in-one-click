@@ -154,11 +154,13 @@ test('a code page that cannot carry Chinese falls back to English', async (t) =>
 })
 
 test('a code page that cannot carry the target path switches the file to UTF-8', async () => {
-  // The directory name is deliberately unrepresentable in cp437, so the test
-  // means the same thing on a machine whose temp path happens to be ASCII.
+  // The work directory is what gets baked into the launcher, so it is the value
+  // that must be unrepresentable in cp437. Naming it here rather than relying on
+  // the machine's own temp path keeps the test meaning the same thing on a
+  // runner whose profile name is ASCII.
   const unrepresentable = join(directory, '启动器目录')
   mkdirSync(unrepresentable, { recursive: true })
-  const result = await install({ directory: unrepresentable }, {
+  const result = await install({ directory: unrepresentable, workdir: unrepresentable }, {
     detectConsoleCodePage: async () => ({ codePage: 437, source: 'stub', detail: 'stub' }),
   })
   assert.equal(result.ok, true, `${String(result.reason)}: ${String(result.hint)}`)
@@ -167,6 +169,7 @@ test('a code page that cannot carry the target path switches the file to UTF-8',
   assert.match(result.warnings.join(' '), /switches itself to UTF-8/)
   assert.equal(readFileSync(result.path).subarray(0, 11).toString('latin1'), '@echo off\r\n')
   assert.match(readFileSync(result.path, 'utf8'), /chcp 65001/)
+  assert.match(readFileSync(result.path, 'utf8'), /启动器目录/)
 })
 
 test('a name whose code page byte pair is cmd syntax switches to UTF-8', async (t) => {
