@@ -1,0 +1,7 @@
+# The sources are LF everywhere so a checkout on any platform matches what the
+# tests read and what `npm pack` publishes. Generated launchers are written at
+# runtime and are never committed, but a batch file added by hand later must
+# keep CRLF: cmd.exe reads a lone LF as part of the line.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
