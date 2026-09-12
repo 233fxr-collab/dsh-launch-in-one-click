@@ -137,24 +137,21 @@ function success(fields) {
 /**
  * Compose launcher text, choosing an encoding that can actually carry it.
  *
- * Two different problems are solved in two different ways, because they have
- * different fixes:
+ * The language is already settled before this runs: `auto` resolved it from the
+ * console code page, and an explicit choice is the caller's. What is left is
+ * the encoding, and there is exactly one problem it can hit — a VALUE with no
+ * representation in the console code page. In practice that is the work
+ * directory, which is the user's own profile path and not something they can
+ * change, and English does not fix a path. So the file switches itself to UTF-8
+ * and tells cmd so with its own `chcp`, which can carry every path Windows
+ * allows.
  *
- * - The console code page cannot carry the LANGUAGE. Nothing about the target
- *   path is at fault, and Chinese text on an English console is the wrong
- *   output anyway, so the launcher is written in English in the same code page.
- * - The console code page cannot carry a VALUE — in practice the target path,
- *   which is the user's own profile directory and not something they can
- *   change. English does not help here, so the file switches itself to UTF-8
- *   and tells cmd so with its own `chcp`, which can carry every path Windows
- *   allows.
- *
- * A launcher produced by the second path is still verified by execution before
- * the install is reported as successful, so an encoding this machine cannot
- * actually parse fails the install instead of shipping.
+ * A launcher produced that way is still verified by execution before the
+ * install is reported successful, so an encoding this machine cannot actually
+ * parse fails the install instead of shipping.
  *
  * @param spec - everything the template needs except the language.
- * @param language - the requested language.
+ * @param language - the resolved language.
  * @param codePage - the console code page to prefer.
  * @returns The text, its encoding, the code page it targets, and warnings.
  */
@@ -163,15 +160,6 @@ function composeLauncher(spec, language, codePage) {
   const nativeText = toCrlf(renderLauncher({ ...spec, language, codePage }))
   const native = encodeForCodePage(nativeText, codePage)
   if (native.lossless) return { text: nativeText, encoded: native, language, codePage, warnings }
-
-  if (language === 'zh' && codePage !== UTF8_CODE_PAGE) {
-    const englishText = toCrlf(renderLauncher({ ...spec, language: 'en', codePage }))
-    const english = encodeForCodePage(englishText, codePage)
-    if (english.lossless) {
-      warnings.push(`the console code page ${String(codePage)} cannot carry the Chinese text (${String(native.reason)}); wrote the English launcher instead`)
-      return { text: englishText, encoded: english, language: 'en', codePage, warnings }
-    }
-  }
 
   if (codePage !== UTF8_CODE_PAGE) {
     const utf8Text = toCrlf(renderLauncher({ ...spec, language, codePage: UTF8_CODE_PAGE }))

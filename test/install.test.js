@@ -136,7 +136,24 @@ test('a failed first install leaves nothing behind', async () => {
   assert.equal(existsSync(join(directory, 'DSH.bat')), false)
 })
 
-test('a code page that cannot carry Chinese falls back to English', async (t) => {
+test('an English console gets an English launcher without being told', async (t) => {
+  const ascii = asciiDirectory()
+  if (ascii === null) {
+    t.skip('no ASCII-only writable directory available on this machine')
+    return
+  }
+  const result = await install({ directory: ascii, workdir: ascii }, {
+    detectConsoleCodePage: async () => ({ codePage: 437, source: 'stub', detail: 'stub' }),
+  })
+  assert.equal(result.ok, true, `${String(result.reason)}: ${String(result.hint)}`)
+  assert.equal(result.language, 'en')
+  assert.equal(result.encoding, 'cp437')
+  assert.deepEqual(result.warnings, [], 'matching the console is not a fallback worth warning about')
+  const bytes = readFileSync(result.path)
+  assert.equal(bytes.every((byte) => byte < 0x80), true, 'the English launcher must be pure ASCII')
+})
+
+test('an explicit Chinese request survives a console that cannot print it', async (t) => {
   const ascii = asciiDirectory()
   if (ascii === null) {
     t.skip('no ASCII-only writable directory available on this machine')
@@ -146,11 +163,10 @@ test('a code page that cannot carry Chinese falls back to English', async (t) =>
     detectConsoleCodePage: async () => ({ codePage: 437, source: 'stub', detail: 'stub' }),
   })
   assert.equal(result.ok, true, `${String(result.reason)}: ${String(result.hint)}`)
-  assert.equal(result.language, 'en')
-  assert.equal(result.encoding, 'cp437')
-  assert.match(result.warnings.join(' '), /cannot carry the Chinese text/)
-  const bytes = readFileSync(result.path)
-  assert.equal(bytes.every((byte) => byte < 0x80), true, 'the fallback file must be pure ASCII')
+  assert.equal(result.language, 'zh', 'asking for Chinese and getting English would be a silent downgrade')
+  assert.equal(result.encoding, 'utf8')
+  assert.equal(result.codePage, 65001)
+  assert.match(readFileSync(result.path, 'utf8'), /试运行结束/)
 })
 
 test('a code page that cannot carry the target path switches the file to UTF-8', async () => {

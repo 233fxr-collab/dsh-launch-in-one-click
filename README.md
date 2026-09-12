@@ -124,6 +124,11 @@ Optional, in the bundle's patch row:
   double-clicked console uses, and switches to it before the first non-ASCII
   byte. Verified on Windows 11: a console *reporting* code page 936 still reads
   a batch file as UTF-8 until the file tells it otherwise.
+- **Language** — `auto` (the default) follows the console: a Chinese-capable
+  code page gets Chinese, an English one gets English with no warning, because
+  matching the console is the point rather than a fallback. An explicit
+  `language: zh` is honoured even on a console that cannot print it, by writing
+  the file in UTF-8 and switching the console to match.
 - **Double-byte trail bytes** — in GBK and its relatives the second byte of a
   character can be `|`, `&`, `<`, `>`, `^`, `%`, `(`, `)`, or `"`. cmd.exe does
   not know the pair is one character and starts a pipe, a redirect, or a
