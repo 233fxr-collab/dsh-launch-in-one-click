@@ -5,13 +5,23 @@
  */
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import http from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, beforeEach, test } from 'node:test'
 import { installLauncher, inspectLauncher, uninstallLauncher, verifyLauncherByRunning } from '../src/install.js'
 import { readLauncherMarker } from '../src/bat-template.js'
 import { encodeForCodePage } from '../src/encoding.js'
+
+/** Take an ephemeral port and release it, so nothing is listening there. */
+async function reserveFreePort() {
+  const server = http.createServer()
+  await new Promise((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  const { port } = server.address()
+  await new Promise((resolve) => { server.close(resolve) })
+  return port
+}
 
 const created = []
 let directory
@@ -144,9 +154,11 @@ test('a code page that cannot carry Chinese falls back to English', async (t) =>
 })
 
 test('a code page that cannot carry the target path switches the file to UTF-8', async () => {
-  // The temporary directory carries this machine's profile name, which is
-  // exactly the case English cannot rescue: the path is not the user's to change.
-  const result = await install({}, {
+  // The directory name is deliberately unrepresentable in cp437, so the test
+  // means the same thing on a machine whose temp path happens to be ASCII.
+  const unrepresentable = join(directory, '启动器目录')
+  mkdirSync(unrepresentable, { recursive: true })
+  const result = await install({ directory: unrepresentable }, {
     detectConsoleCodePage: async () => ({ codePage: 437, source: 'stub', detail: 'stub' }),
   })
   assert.equal(result.ok, true, `${String(result.reason)}: ${String(result.hint)}`)
@@ -279,7 +291,10 @@ test('the real runner executes the launcher and reports its dry run', async (t) 
     return
   }
   const path = join(directory, 'real.bat')
-  const written = await install({ fileName: 'real.bat', port: 34567 }, { verifyLauncherByRunning })
+  // A port nothing is listening on, taken and released, so the launcher reaches
+  // its dry-run plan instead of refusing a busy port on a shared runner.
+  const free = await reserveFreePort()
+  const written = await install({ fileName: 'real.bat', port: free }, { verifyLauncherByRunning })
   assert.equal(written.ok, true)
   assert.equal(written.verified, true)
   assert.equal(written.verification.exitCode, 0)

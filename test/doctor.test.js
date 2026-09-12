@@ -145,7 +145,12 @@ test('the doctor runs for real against this machine', { skip: process.platform !
   assert.equal(typeof report.ok, 'boolean')
   assert.ok(report.checks.length >= 6, 'a real run reports every check')
   assert.ok(['free', 'dsh', 'foreign', 'error', null].includes(report.portState))
-  assert.ok(report.directory !== null)
+  // A host with no user Desktop folder is a legitimate outcome; what must never
+  // happen is silence about it.
+  assert.ok(
+    report.directory !== null || report.checks.some((entry) => entry.id === 'directory' && entry.status === 'fail'),
+    'the Desktop is either resolved or reported as unresolvable',
+  )
   for (const entry of report.checks) {
     assert.ok(entry.detail.length > 0, `${entry.id} must explain itself`)
     assert.ok(['ok', 'warn', 'fail', 'info', 'skip'].includes(entry.status))
