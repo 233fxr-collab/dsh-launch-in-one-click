@@ -90,6 +90,77 @@ export async function detectConsoleCodePage(options = {}) {
   return { codePage, source: 'chcp', detail: result.stdout.trim() }
 }
 
+/** Registry key holding the system code pages. */
+const NLS_CODE_PAGE_KEY = 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Nls\\CodePage'
+
+/**
+ * Read the OEM code page out of `reg query` output.
+ * @param text - reg stdout.
+ * @returns The code page, or `null` when the value is absent.
+ */
+export function parseOemCodePage(text) {
+  const match = /OEMCP\s+REG_SZ\s+(\d+)/i.exec(String(text ?? ''))
+  if (match === null) return null
+  const value = Number(match[1])
+  return Number.isInteger(value) && value > 0 ? value : null
+}
+
+/**
+ * Detect the system OEM code page — the code page a freshly started console
+ * gets, and therefore the one a double-clicked batch file will be read in.
+ *
+ * This is deliberately not the same question as "what code page is this
+ * process's console using". The launcher is installed by a process (the
+ * harness) whose console may have been changed — a UTF-8 terminal, a console
+ * someone ran `chcp` in, a CI runner — while the person who double-clicks the
+ * file gets the system default. Targeting the installing console produced an
+ * English UTF-8 launcher on a Chinese Windows, measured while building this.
+ *
+ * @param options - command runner, environment, abort signal, and platform.
+ * @returns The code page and how it was determined.
+ */
+export async function detectOemCodePage(options = {}) {
+  const { run = runCommand, env = process.env, signal, platform = process.platform } = options
+  if (platform !== 'win32') return { codePage: null, source: 'unavailable', detail: 'not-windows' }
+  const result = await run('reg', ['query', NLS_CODE_PAGE_KEY, '/v', 'OEMCP'], {
+    env,
+    signal,
+    decode: (buffer) => buffer.toString('latin1'),
+  })
+  if (result.failure !== undefined || result.code !== 0) {
+    return { codePage: null, source: 'unavailable', detail: result.failure ?? `exit:${String(result.code)}` }
+  }
+  const codePage = parseOemCodePage(result.stdout)
+  if (codePage === null) return { codePage: null, source: 'unavailable', detail: 'no-OEMCP-value' }
+  return { codePage, source: 'oem', detail: result.stdout.trim().split(/\r?\n/).pop().trim() }
+}
+
+/**
+ * Decide which code page a generated launcher should be written for: the
+ * system OEM code page when it can be read, and this console's code page only
+ * as a fallback.
+ * @param options - command runner, environment, abort signal, and platform.
+ * @returns The chosen code page, its source, and the console's own code page.
+ */
+export async function detectLauncherCodePage(options = {}) {
+  const consolePage = await detectConsoleCodePage(options)
+  const oem = await detectOemCodePage(options)
+  if (oem.codePage !== null) {
+    return {
+      codePage: oem.codePage,
+      source: 'oem',
+      detail: oem.detail,
+      consoleCodePage: consolePage.codePage,
+    }
+  }
+  return {
+    codePage: consolePage.codePage,
+    source: consolePage.codePage === null ? 'unavailable' : 'console',
+    detail: consolePage.detail,
+    consoleCodePage: consolePage.codePage,
+  }
+}
+
 /**
  * Build a decoder for one code page, used to read redirected console output.
  * @param codePage - numeric Windows code page.

@@ -17,7 +17,7 @@
 import { join } from 'node:path'
 import { REAL_FS, probeWritableDirectory } from './atomic.js'
 import { resolveDesktopDirectory } from './desktop.js'
-import { detectConsoleCodePage } from './encoding.js'
+import { detectLauncherCodePage } from './encoding.js'
 import { DEFAULT_FILE_NAMES, inspectLauncher, verifyLauncherByRunning } from './install.js'
 import { findPortOwner } from './netstat.js'
 import { runPortProbe } from './probe.js'
@@ -33,7 +33,7 @@ function defaultDeps() {
   return {
     fs: REAL_FS,
     run: runCommand,
-    detectConsoleCodePage,
+    detectLauncherCodePage,
     resolveDesktopDirectory,
     runPortProbe,
     findPortOwner,
@@ -118,11 +118,15 @@ export async function runDoctor(options = {}, overrides = {}) {
   }
 
   // --- Console code page ----------------------------------------------------
-  const detected = await deps.detectConsoleCodePage({ run: deps.run, env, signal, platform })
+  const detected = await deps.detectLauncherCodePage({ run: deps.run, env, signal, platform })
   if (detected.codePage === null) {
     checks.push(check('code-page', 'warn', `The console code page could not be read (${detected.detail}); installing would stop here.`))
   } else {
-    checks.push(check('code-page', 'ok', `code page ${String(detected.codePage)} (${detected.source})`))
+    const source = detected.source === 'oem' ? 'system OEM, what a double-click gets' : `this console (${detected.source})`
+    const mismatch = detected.consoleCodePage !== null && detected.consoleCodePage !== detected.codePage
+      ? `; this console runs code page ${String(detected.consoleCodePage)}`
+      : ''
+    checks.push(check('code-page', 'ok', `code page ${String(detected.codePage)} (${source})${mismatch}`))
   }
 
   // --- Directory ------------------------------------------------------------

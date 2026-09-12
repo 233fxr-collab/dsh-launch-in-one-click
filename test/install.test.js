@@ -38,7 +38,7 @@ after(() => {
 /** Probes stubbed out: these tests are about files, not about this machine. */
 function deps(overrides = {}) {
   return {
-    detectConsoleCodePage: async () => ({ codePage: 936, source: 'stub', detail: 'stub' }),
+    detectLauncherCodePage: async () => ({ codePage: 936, source: 'stub', detail: 'stub' }),
     resolveDesktopDirectory: async () => ({ path: directory, source: 'stub', candidates: [] }),
     probeWritableDirectory: async () => ({ writable: true, reason: null }),
     runPortProbe: async () => ({ state: 'free', detail: 'free' }),
@@ -143,7 +143,7 @@ test('an English console gets an English launcher without being told', async (t)
     return
   }
   const result = await install({ directory: ascii, workdir: ascii }, {
-    detectConsoleCodePage: async () => ({ codePage: 437, source: 'stub', detail: 'stub' }),
+    detectLauncherCodePage: async () => ({ codePage: 437, source: 'stub', detail: 'stub' }),
   })
   assert.equal(result.ok, true, `${String(result.reason)}: ${String(result.hint)}`)
   assert.equal(result.language, 'en')
@@ -160,7 +160,7 @@ test('an explicit Chinese request survives a console that cannot print it', asyn
     return
   }
   const result = await install({ directory: ascii, workdir: ascii, language: 'zh' }, {
-    detectConsoleCodePage: async () => ({ codePage: 437, source: 'stub', detail: 'stub' }),
+    detectLauncherCodePage: async () => ({ codePage: 437, source: 'stub', detail: 'stub' }),
   })
   assert.equal(result.ok, true, `${String(result.reason)}: ${String(result.hint)}`)
   assert.equal(result.language, 'zh', 'asking for Chinese and getting English would be a silent downgrade')
@@ -177,7 +177,7 @@ test('a code page that cannot carry the target path switches the file to UTF-8',
   const unrepresentable = join(directory, '启动器目录')
   mkdirSync(unrepresentable, { recursive: true })
   const result = await install({ directory: unrepresentable, workdir: unrepresentable }, {
-    detectConsoleCodePage: async () => ({ codePage: 437, source: 'stub', detail: 'stub' }),
+    detectLauncherCodePage: async () => ({ codePage: 437, source: 'stub', detail: 'stub' }),
   })
   assert.equal(result.ok, true, `${String(result.reason)}: ${String(result.hint)}`)
   assert.equal(result.encoding, 'utf8')
@@ -197,7 +197,7 @@ test('a name whose code page byte pair is cmd syntax switches to UTF-8', async (
     return
   }
   const result = await install({ fileName: hazardous }, {
-    detectConsoleCodePage: async () => ({ codePage: 936, source: 'stub', detail: 'stub' }),
+    detectLauncherCodePage: async () => ({ codePage: 936, source: 'stub', detail: 'stub' }),
   })
   assert.equal(result.ok, true, `${String(result.reason)}: ${String(result.hint)}`)
   assert.equal(result.encoding, 'utf8')

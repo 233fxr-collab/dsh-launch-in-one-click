@@ -22,7 +22,7 @@ import {
 } from './atomic.js'
 import { readLauncherMarker, renderLauncher, toCrlf } from './bat-template.js'
 import { resolveDesktopDirectory } from './desktop.js'
-import { UTF8_CODE_PAGE, detectConsoleCodePage, encodeForCodePage, makeDecoder } from './encoding.js'
+import { UTF8_CODE_PAGE, detectLauncherCodePage, encodeForCodePage, makeDecoder } from './encoding.js'
 import { EXIT, describeExitCode } from './exit-codes.js'
 import { runPortProbe } from './probe.js'
 import { runCommand } from './run.js'
@@ -48,7 +48,7 @@ function defaultDeps() {
     fs: REAL_FS,
     run: runCommand,
     now: () => new Date(),
-    detectConsoleCodePage,
+    detectLauncherCodePage,
     resolveDesktopDirectory,
     runPortProbe,
     writeFileAtomic,
@@ -267,7 +267,7 @@ export async function installLauncher(options = {}, overrides = {}) {
     if (!directoryCheck.ok) return failure(directoryCheck.reason, directoryCheck.hint)
   }
 
-  const detected = await deps.detectConsoleCodePage({ run: deps.run, env, signal, platform })
+  const detected = await deps.detectLauncherCodePage({ run: deps.run, env, signal, platform })
   if (detected.codePage === null) {
     return failure(
       'code-page-unknown',

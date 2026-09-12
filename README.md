@@ -120,10 +120,16 @@ Optional, in the bundle's patch row:
 - **Redirected or localized Desktop** — resolved through the shell known-folder
   API, then both registry keys, then `%USERPROFILE%\Desktop`. A source pointing
   at a folder that does not exist is skipped rather than trusted.
-- **Console code pages** — the launcher is written in the code page a
-  double-clicked console uses, and switches to it before the first non-ASCII
-  byte. Verified on Windows 11: a console *reporting* code page 936 still reads
-  a batch file as UTF-8 until the file tells it otherwise.
+- **Console code pages** — the launcher targets the system OEM code page, which
+  is the one a freshly started console has and therefore the one a double-clicked
+  batch file is read in. That is deliberately not the code page of the process
+  that installs it: installing from a UTF-8 terminal on a Chinese Windows
+  produced an English UTF-8 launcher, measured while building this. The
+  installing console's code page is used only when the registry cannot be read,
+  and the doctor reports both. The file switches the console to its own code
+  page before its first non-ASCII byte. Verified on Windows 11: a console
+  *reporting* code page 936 still reads a batch file as UTF-8 until the file
+  tells it otherwise.
 - **Language** — `auto` (the default) follows the console: a Chinese-capable
   code page gets Chinese, an English one gets English with no warning, because
   matching the console is the point rather than a fallback. An explicit

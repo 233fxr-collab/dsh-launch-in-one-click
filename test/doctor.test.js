@@ -26,7 +26,7 @@ after(() => {
 /** Every probe answered without touching the machine. */
 function deps(overrides = {}) {
   return {
-    detectConsoleCodePage: async () => ({ codePage: 936, source: 'stub', detail: 'stub' }),
+    detectLauncherCodePage: async () => ({ codePage: 936, source: 'stub', detail: 'stub' }),
     resolveDesktopDirectory: async () => ({ path: directory, source: 'stub', candidates: [] }),
     probeWritableDirectory: async () => ({ writable: true, reason: null }),
     runPortProbe: async () => ({ state: 'free', detail: 'free' }),

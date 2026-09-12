@@ -6,7 +6,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  DBCS_CODE_PAGES, assertEncodable, encodeForCodePage, findDbcsHazard, iconvNameFor, makeDecoder, parseCodePage,
+  DBCS_CODE_PAGES, assertEncodable, detectLauncherCodePage, encodeForCodePage, findDbcsHazard, iconvNameFor,
+  makeDecoder, parseCodePage, parseOemCodePage,
 } from '../src/encoding.js'
 import { CATALOGS, MESSAGE_KEYS, assertEchoSafe, catalogFor, fill, messagesFor } from '../src/messages.js'
 
@@ -126,4 +127,48 @@ test('code page names and chcp output are read correctly', () => {
   assert.equal(parseCodePage('活动代码页: 936'), 936)
   assert.equal(parseCodePage('no number here'), null)
   assert.equal(makeDecoder(null)(Buffer.from('中文', 'utf8')), '中文')
+})
+
+test('the OEM code page is read from the registry', () => {
+  const output = [
+    '',
+    'HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Nls\\CodePage',
+    '    OEMCP    REG_SZ    936',
+    '',
+  ].join('\r\n')
+  assert.equal(parseOemCodePage(output), 936)
+  assert.equal(parseOemCodePage('    ACP    REG_SZ    65001'), null)
+  assert.equal(parseOemCodePage(''), null)
+})
+
+test('the launcher targets the OEM code page, not the installing console', async () => {
+  // The case measured on a Chinese Windows: the harness console runs UTF-8, but
+  // a double-clicked launcher gets a console at the system OEM code page.
+  const detected = await detectLauncherCodePage({
+    run: async (command, args) => {
+      if (command === 'reg') return { code: 0, stdout: '    OEMCP    REG_SZ    936\r\n', stderr: '' }
+      return { code: 0, stdout: 'Active code page: 65001\r\n', stderr: '' }
+    },
+  })
+  assert.equal(detected.codePage, 936)
+  assert.equal(detected.source, 'oem')
+  assert.equal(detected.consoleCodePage, 65001, 'the console it was installed from is still reported')
+})
+
+test('a host where the registry cannot be read falls back to this console', async () => {
+  const detected = await detectLauncherCodePage({
+    run: async (command) => (command === 'reg'
+      ? { code: 1, stdout: '', stderr: '', failure: 'ENOENT' }
+      : { code: 0, stdout: 'Active code page: 437\r\n', stderr: '' }),
+  })
+  assert.equal(detected.codePage, 437)
+  assert.equal(detected.source, 'console')
+})
+
+test('no answer from either source stays unavailable rather than guessing', async () => {
+  const detected = await detectLauncherCodePage({
+    run: async () => ({ code: 1, stdout: '', stderr: '', failure: 'ENOENT' }),
+  })
+  assert.equal(detected.codePage, null)
+  assert.equal(detected.source, 'unavailable')
 })

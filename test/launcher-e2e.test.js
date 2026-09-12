@@ -67,7 +67,7 @@ const FIXED_CODE_PAGE = 936
 /** Machine probes stubbed: this file is about the batch file, not the host. */
 function deps(overrides = {}) {
   return {
-    detectConsoleCodePage: async () => ({ codePage: FIXED_CODE_PAGE, source: 'stub', detail: 'stub' }),
+    detectLauncherCodePage: async () => ({ codePage: FIXED_CODE_PAGE, source: 'stub', detail: 'stub' }),
     runPortProbe: async () => ({ state: 'free', detail: 'free' }),
     ...overrides,
   }
@@ -228,7 +228,7 @@ test('the installed launcher is byte-stable across runs', { skip: !windowsOnly }
 
 test('an explicit language is written even when the console cannot print it', { skip: !windowsOnly }, async () => {
   const launcher = await write('forced-zh.bat', { port: freePort, language: 'zh' }, {
-    detectConsoleCodePage: async () => ({ codePage: 437, source: 'stub', detail: 'stub' }),
+    detectLauncherCodePage: async () => ({ codePage: 437, source: 'stub', detail: 'stub' }),
   })
   assert.equal(launcher.language, 'zh')
   assert.equal(launcher.encoding, 'utf8')
