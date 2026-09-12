@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { test } from 'node:test'
-import { Config, apply, inject, name, parseLaunchInput } from '../src/index.js'
+import { Config, apply, handleLaunchCommand, inject, name, parseLaunchInput } from '../src/index.js'
 import { PLUGIN_VERSION } from '../src/install.js'
 
 /** A Cordis context that records what the plugin registers. */
@@ -123,6 +123,99 @@ test('the command grammar accepts the documented switches', () => {
   assert.equal(parseLaunchInput('--overwrite').overwrite, true)
   assert.equal(parseLaunchInput('--dry-run').dryRun, true)
   assert.equal(parseLaunchInput('doctor --port 3111 --dry-run').port, 3111)
+})
+
+test('the language switch is part of the command grammar', () => {
+  assert.equal(parseLaunchInput('').language, undefined, 'unset means the deployment default')
+  assert.equal(parseLaunchInput('--language zh').language, 'zh')
+  assert.equal(parseLaunchInput('--language en').language, 'en')
+  assert.equal(parseLaunchInput('--language auto').language, 'auto')
+  assert.equal(parseLaunchInput('--lang zh').language, 'zh', '--lang is the short form')
+  assert.equal(parseLaunchInput('--lang en --port 3111').port, 3111)
+  assert.equal(parseLaunchInput('--language zh --language en').language, 'en', 'the last one wins')
+
+  for (const bad of ['--language', '--language fr', '--lang']) {
+    const parsed = parseLaunchInput(bad)
+    assert.notEqual(parsed.error, null, bad)
+    assert.match(parsed.error, /auto, en, zh/, `${bad} must name the values it accepts`)
+  }
+})
+
+test('so is the usage the command shows', () => {
+  assert.match(parseLaunchInput('--help').error, /--lang auto\|en\|zh/)
+})
+
+test('the command writes the language it was asked for', async () => {
+  const calls = []
+  const install = async (options) => {
+    calls.push(options)
+    return { ok: true, path: 'C:\\Users\\me\\Desktop\\DSH.bat', bytes: 10, encoding: 'gbk', language: options.language, port: options.port, warnings: [] }
+  }
+  const find = async () => null
+  const deployment = { defaultPort: 3080, language: 'auto', runner: 'npx', packageSpec: '@deepseek-ai/dsh', openBrowser: true }
+
+  await handleLaunchCommand('--language en', deployment, { install, find })
+  assert.equal(calls.at(-1).language, 'en')
+
+  await handleLaunchCommand('', deployment, { install, find })
+  assert.equal(calls.at(-1).language, 'auto', 'no switch keeps the deployment default')
+
+  await handleLaunchCommand('--lang zh', { ...deployment, language: 'en' }, { install, find })
+  assert.equal(calls.at(-1).language, 'zh', 'an explicit switch beats the deployment default')
+
+  const refused = await handleLaunchCommand('--language fr', deployment, { install, find })
+  assert.equal(refused.kind, 'error')
+  assert.equal(calls.length, 3, 'a bad switch never reaches the installer')
+})
+
+test('switching language keeps what the installed launcher was written for', async () => {
+  const calls = []
+  const install = async (options) => {
+    calls.push(options)
+    return { ok: true, path: 'C:\\Users\\me\\Desktop\\DSH.bat', bytes: 10, encoding: 'utf8', language: options.language, port: options.port, warnings: [] }
+  }
+  const installed = {
+    exists: true,
+    owned: true,
+    fileName: 'Launch DeepSeek Harness.bat',
+    config: { port: '3111', runner: 'dsh', workdir: 'D:\\work', lang: 'en', cp: '936' },
+  }
+  const deployment = { defaultPort: 3080, language: 'auto', runner: 'npx', packageSpec: '@deepseek-ai/dsh', openBrowser: true }
+
+  await handleLaunchCommand('--lang zh', deployment, { install, find: async () => installed, workdir: 'C:\\elsewhere' })
+  assert.deepEqual(
+    { port: calls[0].port, workdir: calls[0].workdir, runner: calls[0].runner, fileName: calls[0].fileName },
+    { port: 3111, workdir: 'D:\\work', runner: 'dsh', fileName: 'Launch DeepSeek Harness.bat' },
+    'a language switch must not move the port, the workspace, or the runner',
+  )
+  assert.equal(calls[0].language, 'zh')
+
+  // An explicit --port still wins over what is on disk.
+  await handleLaunchCommand('--lang zh --port 3222', deployment, { install, find: async () => installed })
+  assert.equal(calls[1].port, 3222)
+
+  // With nothing installed, the deployment defaults apply as before.
+  await handleLaunchCommand('--lang zh', deployment, { install, find: async () => null })
+  assert.equal(calls[2].port, 3080)
+  assert.equal(calls[2].runner, 'npx')
+
+  // A dry run predicts the real action, so it reads the installed launcher too —
+  // otherwise it would report a different file name than a real switch uses.
+  const before = calls.length
+  const dry = await handleLaunchCommand('--dry-run', deployment, { install, find: async () => installed })
+  assert.equal(calls.length, before + 1)
+  assert.equal(calls.at(-1).dryRun, true)
+  assert.equal(calls.at(-1).fileName, installed.fileName)
+  assert.equal(dry.kind, 'success')
+})
+
+test('the command reports the language it installed', async () => {
+  const result = await handleLaunchCommand('--lang zh', { defaultPort: 3080, language: 'auto', runner: 'npx' }, {
+    install: async () => ({ ok: true, path: 'C:\\DSH.bat', bytes: 20, encoding: 'gbk', language: 'zh', port: 3080, warnings: [] }),
+    find: async () => null,
+  })
+  assert.equal(result.kind, 'success')
+  assert.match(result.text, /gbk, zh, port 3080/)
 })
 
 test('the command grammar rejects what it cannot honour', () => {

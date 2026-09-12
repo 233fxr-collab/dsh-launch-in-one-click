@@ -10,7 +10,7 @@ import http from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, beforeEach, test } from 'node:test'
-import { DEFAULT_FILE_NAMES, installLauncher, inspectLauncher, uninstallLauncher, verifyLauncherByRunning } from '../src/install.js'
+import { DEFAULT_FILE_NAMES, findInstalledLauncher, installLauncher, inspectLauncher, uninstallLauncher, verifyLauncherByRunning } from '../src/install.js'
 import { readLauncherMarker } from '../src/bat-template.js'
 import { encodeForCodePage } from '../src/encoding.js'
 
@@ -184,7 +184,7 @@ test('a code page that cannot carry the target path switches the file to UTF-8',
   assert.equal(result.codePage, 65001)
   assert.match(result.warnings.join(' '), /switches itself to UTF-8/)
   assert.equal(readFileSync(result.path).subarray(0, 11).toString('latin1'), '@echo off\r\n')
-  assert.match(readFileSync(result.path, 'utf8'), /chcp 65001/)
+  assert.match(readFileSync(result.path, 'utf8'), /启动器目录/)
   assert.match(readFileSync(result.path, 'utf8'), /启动器目录/)
 })
 
@@ -338,6 +338,38 @@ test('onlyIfAbsent finds a launcher saved under the other shipped name', async (
   assert.equal(result.ok, true)
   assert.equal(result.unchanged, true)
   assert.equal(result.fileName, name, 'the file that is already there is the one reported')
+})
+
+test('the installed launcher is found under either shipped name', async () => {
+  // Exercised through the real function, not a stub: the language switch reads
+  // this to keep the port and workspace it is switching the language of.
+  assert.equal(await findInstalledLauncher({ directory }, deps()), null)
+
+  writeFileSync(join(directory, 'SomeoneElses.bat'), 'not ours\r\n')
+  assert.equal(await findInstalledLauncher({ directory }, deps()), null, 'a foreign file is not a launcher of ours')
+
+  const written = await install({ fileName: DEFAULT_FILE_NAMES.en })
+  assert.equal(written.ok, true, `${String(written.reason)}: ${String(written.hint)}`)
+
+  const found = await findInstalledLauncher({ directory }, deps())
+  assert.equal(found.owned, true)
+  assert.equal(found.config.port, '3080')
+  assert.equal(found.fileName, DEFAULT_FILE_NAMES.en)
+})
+
+test('a recorded work directory survives inspection in a non-ASCII path', async () => {
+  // The launcher stores the work directory in its own code page, so the marker
+  // reader has to decode the values the same way the launcher tells cmd to.
+  // Reading them as latin1 turned 方向容 into mojibake that the language switch
+  // would then have written into the regenerated launcher.
+  const chinese = join(directory, '工作区')
+  mkdirSync(chinese, { recursive: true })
+  const written = await install({ fileName: DEFAULT_FILE_NAMES.zh, workdir: chinese, port: 3111 })
+  assert.equal(written.ok, true, `${String(written.reason)}: ${String(written.hint)}`)
+
+  const found = await findInstalledLauncher({ directory }, deps())
+  assert.equal(found.config.workdir, chinese)
+  assert.equal(found.config.port, '3111')
 })
 
 test('the real runner executes the launcher and reports its dry run', async (t) => {

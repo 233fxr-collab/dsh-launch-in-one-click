@@ -57,6 +57,7 @@ function defaultDeps() {
     hashBytes,
     removeQuietly,
     verifyLauncherByRunning,
+    inspectLauncher,
   }
 }
 
@@ -554,6 +555,36 @@ function restoreBackup(deps, backupPath, targetPath) {
 }
 
 /**
+ * Find a launcher this plugin wrote, among the names it ships.
+ *
+ * Used by the `/launch` language switch, which must rewrite the launcher the
+ * user already has — with the port, workspace, and runner it was written for —
+ * rather than a fresh one built from today's defaults.
+ *
+ * @param options - directory and file name to look in, both optional.
+ * @param overrides - dependency overrides for tests.
+ * @returns The inspection result for the first match, or `null`.
+ */
+export async function findInstalledLauncher(options = {}, overrides = {}) {
+  const deps = { ...defaultDeps(), ...overrides }
+  const { directory, fileName, env = process.env, platform = process.platform } = options
+
+  let targetDirectory = directory
+  if (targetDirectory === undefined) {
+    const desktop = await deps.resolveDesktopDirectory({ run: deps.run, env, platform })
+    if (desktop.path === null) return null
+    targetDirectory = desktop.path
+  }
+
+  const names = fileName === undefined ? [DEFAULT_FILE_NAMES.zh, DEFAULT_FILE_NAMES.en] : [fileName]
+  for (const name of names) {
+    const inspected = deps.inspectLauncher(join(targetDirectory, name), { fs: deps.fs })
+    if (inspected.exists && inspected.owned) return { ...inspected, fileName: name }
+  }
+  return null
+}
+
+/**
  * Remove a launcher this plugin wrote.
  * @param options - target directory, file name, or an explicit path, plus force.
  * @param overrides - dependency overrides for tests.
@@ -614,6 +645,15 @@ export async function uninstallLauncher(options = {}, overrides = {}) {
 
 /**
  * Inspect an installed launcher without changing it.
+ *
+ * The marker is located through a latin1 decode, which is safe because the
+ * marker syntax itself is ASCII. The recorded VALUES are not: a work directory
+ * with Chinese in it is stored in the file's own code page, so the config is
+ * re-read through that code page once the marker has named it. Reading it as
+ * latin1 — the obvious first implementation — turned `C:\Users\方向容` into
+ * `C:\Users\·½ÏòÈÝ`, which the language switch would then have written into the
+ * launcher it was regenerating.
+ *
  * @param path - launcher path.
  * @param overrides - dependency overrides for tests.
  * @returns Ownership, recorded config, and whether the bytes match a fresh render.
@@ -622,7 +662,14 @@ export function inspectLauncher(path, overrides = {}) {
   const deps = { ...defaultDeps(), ...overrides }
   const bytes = deps.readFileBytes(path, deps.fs)
   if (bytes === null) return { exists: false, owned: false, version: null, config: null, bytes: 0, sha256: null, path }
+
   const marker = readLauncherMarker(bytes.toString('latin1'))
+  const recordedCodePage = Number(marker.config?.cp)
+  if (marker.owned && Number.isInteger(recordedCodePage) && recordedCodePage > 0) {
+    const decoded = makeDecoder(recordedCodePage)(bytes)
+    if (decoded !== null) marker.config = readLauncherMarker(decoded).config ?? marker.config
+  }
+
   return {
     exists: true,
     owned: marker.owned,

@@ -1,6 +1,8 @@
 # dsh-Launch in One Click
 
-English | [中文](README.zh.md)
+**English** | [中文](README.zh.md)
+
+Switch the generated launcher's language at any time — `/launch --lang zh`, `/launch --lang en`, or `/launch --lang auto` to follow the console.
 
 A DeepSeek Harness plugin for Windows that writes a **self-contained one-click
 launcher** — a `.bat` on your Desktop — and refuses to start a second Harness
@@ -88,10 +90,15 @@ Three tools, plus a slash command.
 /launch                      install with the deployment defaults
 /launch doctor               same report as launcher_doctor
 /launch --port 3111          start the harness on another port
+/launch --lang zh            write the launcher in Chinese  (--lang en | --lang auto)
 /launch --name "Work.bat"    choose the file name
 /launch --overwrite          replace a file this plugin did not write
 /launch --dry-run            show what would be written
 ```
+
+`--language` is the long form of `--lang`. Switching language rewrites the
+launcher this plugin wrote, keeping a timestamped backup, and changes nothing
+else about it: the port, the workspace, and the runner stay as they were.
 
 The launcher itself accepts `--port N`, `--workdir DIR`, `--no-open`,
 `--dry-run`, and `--help`.

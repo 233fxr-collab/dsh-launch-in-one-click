@@ -1,6 +1,8 @@
 # dsh-Launch in One Click
 
-[English](README.md) | 中文
+[English](README.md) | **中文**
+
+随时切换生成的启动器语言 —— `/launch --lang zh`、`/launch --lang en`，或 `/launch --lang auto` 跟随控制台。
 
 一个 Windows 专用的 DeepSeek Harness 插件：在你的桌面写入一个**自包含的一键启动器**（`.bat`），
 并在目标端口已经有 Harness 实例时拒绝启动第二个实例。
@@ -75,10 +77,14 @@ dsh plugin --profile web add github:233fxr-collab/dsh-launch-in-one-click
 /launch                      用部署默认值安装
 /launch doctor               等同于 launcher_doctor 的报告
 /launch --port 3111          换一个端口启动
+/launch --lang zh            用中文写入启动器（--lang en | --lang auto）
 /launch --name "Work.bat"    指定文件名
 /launch --overwrite          覆盖一个不是本插件写的文件
 /launch --dry-run            只显示将要写入的内容
 ```
+
+`--language` 是 `--lang` 的完整写法。切换语言会重写本插件写出的那个启动器（保留带时间戳的备份），
+其余部分不变：端口、工作区、启动方式都保持原样。
 
 启动器本身接受 `--port N`、`--workdir DIR`、`--no-open`、`--dry-run`、`--help`。
 

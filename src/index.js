@@ -15,10 +15,10 @@
 
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { DEFAULT_FILE_NAMES, PLUGIN_VERSION, installLauncher, uninstallLauncher } from './install.js'
+import { DEFAULT_FILE_NAMES, PLUGIN_VERSION, findInstalledLauncher, installLauncher, uninstallLauncher } from './install.js'
 import { describeProvision, provisionLauncher } from './provision.js'
 import { runDoctor } from './doctor.js'
-import { RUNNERS } from './validate.js'
+import { LANGUAGES, RUNNERS, checkLanguage } from './validate.js'
 
 /** Cordis plugin name. */
 export const name = 'launch-in-one-click'
@@ -341,49 +341,80 @@ export function apply(ctx, config) {
   ctx.inject(['commands'], (commandCtx) => {
     commandCtx.commands.register({
       name: 'launch',
-      description: 'Install a one-click DeepSeek Harness launcher on the Desktop',
-      input: { hint: '[doctor] [--port N] [--name FILE] [--overwrite] [--dry-run]' },
-      handler: async ({ rawInput }) => {
-        const parsed = parseLaunchInput(rawInput ?? '')
-        if (parsed.error !== null) return { kind: 'error', text: parsed.error }
-
-        if (parsed.doctor) {
-          const report = await runDoctor({
-            port: parsed.port ?? deployment.defaultPort,
-            fileName: parsed.fileName,
-            runner: deployment.runner,
-            verifyExecution: true,
-          })
-          const failing = report.checks.filter((entry) => entry.status === 'fail' || entry.status === 'warn')
-          const text = failing.length === 0
-            ? `Preflight clean: ${String(report.summary.ok)} checks passed. Desktop: ${String(report.directory)}`
-            : failing.map((entry) => `[${entry.status}] ${entry.id}: ${entry.detail}`).join('\n')
-          return { kind: report.summary.fail === 0 ? 'success' : 'error', text }
-        }
-
-        const result = await installLauncher({
-          port: parsed.port ?? deployment.defaultPort,
-          fileName: parsed.fileName,
-          workdir: process.cwd(),
-          runner: deployment.runner,
-          language: deployment.language,
-          packageSpec: deployment.packageSpec,
-          openBrowser: deployment.openBrowser,
-          overwrite: parsed.overwrite,
-          dryRun: parsed.dryRun,
-          verify: parsed.dryRun ? 'none' : 'run',
-        })
-
-        if (!result.ok) return { kind: 'error', text: `${String(result.reason)}: ${String(result.hint)}` }
-        const text = result.unchanged
-          ? `Already up to date: ${String(result.path)}`
-          : `Installed ${String(result.path)} (${String(result.bytes)} bytes, ${String(result.encoding)}, port ${String(result.port)})`
-        return { kind: 'success', text: [text, ...result.warnings.map((warning) => `warning: ${warning}`)].join('\n') }
-      },
+      description: 'Install a one-click DeepSeek Harness launcher on the Desktop, in either language',
+      input: { hint: '[doctor] [--port N] [--lang auto|en|zh] [--name FILE] [--overwrite] [--dry-run]' },
+      handler: async ({ rawInput }) => await handleLaunchCommand(rawInput ?? '', deployment),
     })
   })
 
   ctx.logger?.info(`dsh-launch-in-one-click ${PLUGIN_VERSION}: launcher_doctor, launcher_install, launcher_uninstall, /launch`)
+}
+
+/**
+ * Run one `/launch` invocation.
+ *
+ * Exported so the command's behaviour — including which language it writes and
+ * what it refuses — is testable without registering a command or touching a
+ * real Desktop.
+ *
+ * @param rawInput - everything after the command name.
+ * @param deployment - the resolved plugin configuration.
+ * @param overrides - installer, doctor, and working-directory overrides.
+ * @returns The settled command result: `kind` plus UI text.
+ */
+export async function handleLaunchCommand(rawInput, deployment, overrides = {}) {
+  const {
+    install = installLauncher,
+    doctor = runDoctor,
+    find = findInstalledLauncher,
+    workdir = process.cwd(),
+  } = overrides
+
+  const parsed = parseLaunchInput(rawInput)
+  if (parsed.error !== null) return { kind: 'error', text: parsed.error }
+
+  if (parsed.doctor) {
+    const report = await doctor({
+      port: parsed.port ?? deployment.defaultPort,
+      fileName: parsed.fileName,
+      runner: deployment.runner,
+      verifyExecution: true,
+    })
+    const notable = report.checks.filter((entry) => entry.status === 'fail' || entry.status === 'warn')
+    const text = notable.length === 0
+      ? `Preflight clean: ${String(report.summary.ok)} checks passed. Desktop: ${String(report.directory)}`
+      : notable.map((entry) => `[${entry.status}] ${entry.id}: ${entry.detail}`).join('\n')
+    return { kind: report.summary.fail === 0 ? 'success' : 'error', text }
+  }
+
+  // A switch rewrites the launcher that is already there, so it has to keep what
+  // that launcher was written for. Otherwise `/launch --lang en` would quietly
+  // move the port, the workspace, and even the file name back to today's
+  // defaults. This read happens for a dry run too: predicting the real action is
+  // the whole point of one, and reading changes nothing.
+  const installed = await find({ fileName: parsed.fileName })
+  const recorded = installed?.config ?? {}
+  const recordedPort = Number(recorded.port)
+  const inheritPort = Number.isInteger(recordedPort) && recordedPort > 0 ? recordedPort : null
+
+  const result = await install({
+    port: parsed.port ?? inheritPort ?? deployment.defaultPort,
+    fileName: parsed.fileName ?? installed?.fileName,
+    workdir: recorded.workdir ?? workdir,
+    runner: recorded.runner ?? deployment.runner,
+    language: parsed.language ?? deployment.language,
+    packageSpec: deployment.packageSpec,
+    openBrowser: deployment.openBrowser,
+    overwrite: parsed.overwrite,
+    dryRun: parsed.dryRun,
+    verify: parsed.dryRun ? 'none' : 'run',
+  })
+
+  if (!result.ok) return { kind: 'error', text: `${String(result.reason)}: ${String(result.hint)}` }
+  const text = result.unchanged
+    ? `Already up to date: ${String(result.path)}`
+    : `Installed ${String(result.path)} (${String(result.bytes)} bytes, ${String(result.encoding)}, ${String(result.language)}, port ${String(result.port)})`
+  return { kind: 'success', text: [text, ...result.warnings.map((warning) => `warning: ${warning}`)].join('\n') }
 }
 
 /**
@@ -393,7 +424,15 @@ export function apply(ctx, config) {
  */
 export function parseLaunchInput(raw) {
   const tokens = String(raw).trim().split(/\s+/).filter((token) => token.length > 0)
-  const parsed = { doctor: false, overwrite: false, dryRun: false, port: null, fileName: undefined, error: null }
+  const parsed = {
+    doctor: false,
+    overwrite: false,
+    dryRun: false,
+    port: null,
+    fileName: undefined,
+    language: undefined,
+    error: null,
+  }
 
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index]
@@ -417,8 +456,16 @@ export function parseLaunchInput(raw) {
       index += 1
       continue
     }
+    if (token === '--language' || token === '--lang') {
+      const value = tokens[index + 1]
+      const checked = value === undefined ? { ok: false, hint: `--language needs one of: ${LANGUAGES.join(', ')}.` } : checkLanguage(value)
+      if (!checked.ok) return { ...parsed, error: checked.hint }
+      parsed.language = checked.value
+      index += 1
+      continue
+    }
     if (token === '--help' || token === '-h') {
-      return { ...parsed, error: 'Usage: /launch [doctor] [--port N] [--name FILE.bat] [--overwrite] [--dry-run]' }
+      return { ...parsed, error: `Usage: /launch [doctor] [--port N] [--lang ${LANGUAGES.join('|')}] [--name FILE.bat] [--overwrite] [--dry-run]` }
     }
     return { ...parsed, error: `Unrecognized argument: ${token}` }
   }
