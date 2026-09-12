@@ -1,0 +1,28 @@
+# The launcher this plugin writes is a Windows batch file, and the tests that
+# matter most generate one and run it with real cmd.exe against real listeners,
+# so the suite runs on Windows rather than on a Linux runner where those tests
+# would skip.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # The harness packages are peer dependencies; installing them is optional
+      # here, and the integration test reports what it skipped.
+      - run: npm install --no-audit --no-fund
+      - run: npm test
