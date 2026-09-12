@@ -10,6 +10,15 @@
 
 ## 它做什么
 
+### 装上它，启动器就出现在桌面上
+
+插件市场的热挂载只接受**纯 insert** 的 bundle patch，所以本插件在你点下"安装"的那一刻就已经生效——
+启动器也就是这时候出现的。**只有桌面上没有启动器时才会创建**：已经存在的（不管是你自己写的还是本插件
+旧版写的）一律原样保留，因为"插件加载"不是你的决定。要替换它，仍然是一个显式动作（`/launch`，
+或 `launcher_install` 工具）。想让它安静加载，把 `provisionOnLoad` 设为 `false`。
+
+### 安装过程本身做了什么
+
 `launcher_install` 按 Windows 自己的定义解析你的桌面目录（包括被 OneDrive 重定向或本地化的
 桌面文件夹），确认该目录可以新建文件，按控制台代码页编码启动器，原子写入，
 然后**用试运行模式把它真正跑一次**，证明它能被解析、能走到自己的逻辑。
@@ -102,7 +111,12 @@ dsh plugin --profile web add github:233fxr-collab/dsh-launch-in-one-click
     runner: npx                      # npx | dsh
     packageSpec: '@deepseek-ai/dsh'  # npx 解析的包名
     openBrowser: true                # 是否让 `dsh web` 自己打开浏览器
+    provisionOnLoad: true            # 加载时创建启动器（仅当桌面没有时）
 ```
+
+⚠️ **在这里加 `config:` 行是有代价的。** 市场只热挂载**纯 `id`/`name` insert**，所以带配置的 bundle patch
+要等下次重启才生效，而不是点完即生效。这也是上面所有默认值都写在代码里而不是这个文件里的原因：
+一行配置都不加地安装，启动器照样在你点"安装"的那一刻出现。
 
 ## 处理了哪些边界情况
 

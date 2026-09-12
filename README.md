@@ -12,6 +12,18 @@ needs already inside it.
 
 ## What it does
 
+### Installing it puts the launcher on your Desktop
+
+A marketplace hot-mounts a plugin whose bundle patch is a plain insert, so this
+one goes live the moment you click Install — and that is when the launcher
+appears. It is created only when your Desktop has none: an existing launcher,
+yours or an older one of ours, is left exactly as it is, because a plugin load
+is not a decision by you. Replacing one stays an explicit action (`/launch`, or
+the `launcher_install` tool). Set `provisionOnLoad: false` to have the plugin
+load silently instead.
+
+### What the install does
+
 `launcher_install` resolves your Desktop the way Windows defines it (including a
 OneDrive-redirected or localized Desktop folder), checks that the folder accepts
 a new file, encodes the launcher for your console's code page, writes it
@@ -113,7 +125,14 @@ Optional, in the bundle's patch row:
     runner: npx                      # npx | dsh
     packageSpec: '@deepseek-ai/dsh'  # what npx resolves
     openBrowser: true                # let `dsh web` open the browser
+    provisionOnLoad: true            # create the launcher on load, if absent
 ```
+
+⚠️ **Adding a `config:` row here has a cost.** A marketplace hot-mounts only a
+plain `id`/`name` insert, so a bundle patch carrying configuration activates on
+the next restart instead of immediately. That is why every default above lives
+in code, not in this file: install with no patch row at all, and the launcher
+still appears the moment you click Install.
 
 ## Edge cases it handles
 

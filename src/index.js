@@ -16,6 +16,7 @@
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { DEFAULT_FILE_NAMES, PLUGIN_VERSION, installLauncher, uninstallLauncher } from './install.js'
+import { describeProvision, provisionLauncher } from './provision.js'
 import { runDoctor } from './doctor.js'
 import { RUNNERS } from './validate.js'
 
@@ -35,6 +36,7 @@ export const Config = z.object({
   runner: z.string().default('npx'),
   packageSpec: z.string().default('@deepseek-ai/dsh'),
   openBrowser: z.boolean().default(true),
+  provisionOnLoad: z.boolean().default(true),
 })
 
 /** Nullable string in the tool-schema DSL. */
@@ -158,6 +160,27 @@ export function apply(ctx, config) {
     runner: config?.runner ?? 'npx',
     packageSpec: config?.packageSpec ?? '@deepseek-ai/dsh',
     openBrowser: config?.openBrowser ?? true,
+    provisionOnLoad: config?.provisionOnLoad ?? true,
+  }
+
+  // The marketplace hot-mounts a plugin whose bundle patch is a plain insert, so
+  // this runs the moment someone clicks Install. The plugin's promise is a
+  // launcher on the Desktop, so that is when it appears — created only when the
+  // Desktop has none, never replacing anything, and never blocking the load.
+  if (deployment.provisionOnLoad) {
+    void provisionLauncher({
+      port: deployment.defaultPort,
+      workdir: process.cwd(),
+      runner: deployment.runner,
+      language: deployment.language,
+      packageSpec: deployment.packageSpec,
+      openBrowser: deployment.openBrowser,
+    }).then((outcome) => {
+      const line = describeProvision(outcome)
+      if (line === null) return
+      if (outcome.action === 'failed') ctx.logger?.warn(`dsh-launch-in-one-click: ${line}`)
+      else ctx.logger?.info(`dsh-launch-in-one-click: ${line}`)
+    })
   }
 
   ctx.tools.register(defineTool({

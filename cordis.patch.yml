@@ -1,14 +1,19 @@
 # The dsh-Launch in One Click bundle patch: one row inserting the plugin.
 #
-# Every field below is optional — the shipped defaults are the ones shown, and
-# omitting `config` entirely is the normal case. They exist so a deployment can
-# pin a different port, language, or runner without touching the tools:
+# This file is deliberately a PLAIN insert — no `config:` row. A marketplace
+# hot-mounts only a plain `id`/`name` insert, so this shape is what makes the
+# plugin, and the launcher it writes to the Desktop, appear the moment someone
+# clicks Install instead of after their next restart. Adding a config row here
+# costs exactly that.
 #
-#   defaultPort   3080                port the generated launcher targets
-#   language      auto                auto | en | zh — `auto` follows the console code page
-#   runner        npx                 npx | dsh — how the generated launcher starts the harness
-#   packageSpec   '@deepseek-ai/dsh'  package the npx runner resolves
-#   openBrowser   true                let `dsh web` open the browser itself
+# Every default therefore lives in code, and each is overridable per deployment:
+#
+#   defaultPort      3080                port the generated launcher targets
+#   language         auto                auto | en | zh — `auto` follows the console code page
+#   runner           npx                 npx | dsh — how the generated launcher starts the harness
+#   packageSpec      '@deepseek-ai/dsh'  package the npx runner resolves
+#   openBrowser      true                let `dsh web` open the browser itself
+#   provisionOnLoad  true                create the launcher on load, when absent, never replacing
 #
 # Removing the row (or the whole bundle) leaves an installed launcher .bat
 # working: the launcher is self-contained and never imports this package.

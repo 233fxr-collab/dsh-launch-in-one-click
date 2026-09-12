@@ -10,7 +10,7 @@ import http from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, beforeEach, test } from 'node:test'
-import { installLauncher, inspectLauncher, uninstallLauncher, verifyLauncherByRunning } from '../src/install.js'
+import { DEFAULT_FILE_NAMES, installLauncher, inspectLauncher, uninstallLauncher, verifyLauncherByRunning } from '../src/install.js'
 import { readLauncherMarker } from '../src/bat-template.js'
 import { encodeForCodePage } from '../src/encoding.js'
 
@@ -302,6 +302,42 @@ test('uninstall removes only a launcher this plugin wrote', async () => {
   const absent = await uninstallLauncher({ path }, deps())
   assert.equal(absent.ok, true)
   assert.equal(absent.removed, false)
+})
+
+test('onlyIfAbsent never replaces, whatever is already there', async () => {
+  // Nothing on disk: it creates one.
+  const fresh = await install({ onlyIfAbsent: true })
+  assert.equal(fresh.ok, true)
+  assert.equal(fresh.unchanged, false)
+
+  // Its own launcher: left exactly as it is, even when the settings changed.
+  const again = await install({ onlyIfAbsent: true, port: 3111 })
+  assert.equal(again.ok, true)
+  assert.equal(again.unchanged, true)
+  assert.match(readFileSync(again.path, 'utf8'), /set "PORT=3080"/, 'the installed port was not rewritten')
+
+  // A file that merely has the same name: untouched, and not treated as a refusal.
+  const foreignDirectory = mkdtempSync(join(tmpdir(), 'dsh-launch-absent-'))
+  created.push(foreignDirectory)
+  writeFileSync(join(foreignDirectory, 'DSH.bat'), 'not ours\r\n')
+  const foreign = await installLauncher(
+    { directory: foreignDirectory, fileName: 'DSH.bat', workdir: foreignDirectory, onlyIfAbsent: true, verify: 'none' },
+    deps(),
+  )
+  assert.equal(foreign.ok, true)
+  assert.equal(foreign.unchanged, true)
+  assert.equal(readFileSync(join(foreignDirectory, 'DSH.bat'), 'utf8'), 'not ours\r\n')
+})
+
+test('onlyIfAbsent finds a launcher saved under the other shipped name', async () => {
+  // No explicit name: the launcher was written in whichever language the
+  // console implied at the time, so both shipped names have to be considered.
+  const name = DEFAULT_FILE_NAMES.en
+  writeFileSync(join(directory, name), 'rem @dsh-launch-in-one-click v1.0.0\r\n')
+  const result = await install({ fileName: undefined, onlyIfAbsent: true })
+  assert.equal(result.ok, true)
+  assert.equal(result.unchanged, true)
+  assert.equal(result.fileName, name, 'the file that is already there is the one reported')
 })
 
 test('the real runner executes the launcher and reports its dry run', async (t) => {

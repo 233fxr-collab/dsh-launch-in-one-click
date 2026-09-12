@@ -235,6 +235,7 @@ export async function installLauncher(options = {}, overrides = {}) {
     fileName,
     overwrite = false,
     force = false,
+    onlyIfAbsent = false,
     dryRun = false,
     probePort = true,
     verify = 'run',
@@ -307,9 +308,41 @@ export async function installLauncher(options = {}, overrides = {}) {
 
   const targetPath = join(targetDirectory, nameCheck.value)
   const existingBytes = deps.readFileBytes(targetPath, deps.fs)
+
+  // Load-time provisioning asks for exactly this: put a launcher there if the
+  // Desktop has none, and otherwise do nothing at all. The check covers both
+  // shipped names, because the file was written in whichever language the
+  // console implied at the time, which is not known until later in this call.
+  if (onlyIfAbsent === true && existingBytes === null) {
+    const otherNames = [fileName === undefined ? DEFAULT_FILE_NAMES.zh : null, fileName === undefined ? DEFAULT_FILE_NAMES.en : null]
+    const present = otherNames.filter((name) => name !== null && name !== nameCheck.value)
+      .find((name) => deps.readFileBytes(join(targetDirectory, name), deps.fs) !== null)
+    if (present !== undefined) {
+      return success({
+        path: join(targetDirectory, present),
+        directory: targetDirectory,
+        fileName: present,
+        unchanged: true,
+        existing: 'ours',
+        warnings: [`${present} is already installed; an install on plugin load never replaces one`],
+      })
+    }
+  }
+
   const existingText = existingBytes === null ? null : existingBytes.toString('latin1')
   const existingMarker = existingText === null ? { owned: false, version: null, config: null } : readLauncherMarker(existingText)
   const existing = existingBytes === null ? 'none' : existingMarker.owned ? 'ours' : 'foreign'
+
+  if (onlyIfAbsent === true && existingBytes !== null) {
+    return success({
+      path: targetPath,
+      directory: targetDirectory,
+      fileName: nameCheck.value,
+      unchanged: true,
+      existing,
+      warnings: ['a launcher is already installed; an install on plugin load never replaces one'],
+    })
+  }
 
   if (existing === 'foreign' && overwrite !== true) {
     return failure(
