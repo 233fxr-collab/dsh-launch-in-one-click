@@ -56,7 +56,7 @@ export function fill(text, values) {
 /** Simplified Chinese catalog — the default when the console code page is 936. */
 const ZH = Object.freeze({
   windowTitle: 'DSH 一键启动',
-  checking: '[1/4] 检查运行环境',
+  checking: '检查运行环境',
   unknownArg: '[错误] 无法识别的参数：',
   helpUsage: '{name} [--port 端口] [--workdir 目录] [--no-open] [--dry-run]',
   nodeMissing: '[错误] 没有找到 Node.js，无法启动。',
@@ -76,7 +76,7 @@ const ZH = Object.freeze({
   portForeign: '[注意] 端口 %PORT% 被其它程序占用，本次不会启动。',
   portForeignHint: '    可以先查出占用它的程序，或者用别的端口启动，例如：',
   planDryRun: '试运行结束：只做了检查，没有启动服务。将要执行的命令：',
-  launching: '正在启动 DeepSeek Harness，首次运行需要下载依赖，请稍候。',
+  launching: '正在启动 DeepSeek Harness，请稍候。若是首次运行，需要先下载依赖，会慢一些。',
   serverFailed: '启动失败或服务异常退出，退出码：',
   serverStopped: '服务已退出。',
   pressAnyKey: '按任意键关闭此窗口 ...',
@@ -91,7 +91,7 @@ const ZH = Object.freeze({
 /** English catalog — the fallback when the console code page cannot carry Chinese. */
 const EN = Object.freeze({
   windowTitle: 'DSH One-Click Launcher',
-  checking: '[1/4] Checking the environment',
+  checking: 'Checking the environment',
   unknownArg: '[error] Unrecognized argument:',
   helpUsage: '{name} [--port N] [--workdir DIR] [--no-open] [--dry-run]',
   nodeMissing: '[error] Node.js was not found, so nothing can start.',
@@ -111,7 +111,7 @@ const EN = Object.freeze({
   portForeign: '[warn] Port %PORT% is held by another program, so nothing was started.',
   portForeignHint: '    Find out what holds it, or start on another port such as:',
   planDryRun: 'Dry run finished: checks only, nothing was started. The command would be:',
-  launching: 'Starting DeepSeek Harness. The first run downloads dependencies, please wait.',
+  launching: 'Starting DeepSeek Harness. If this is the first run it downloads dependencies first, which takes longer.',
   serverFailed: 'The harness failed to start or exited with an error. Exit code:',
   serverStopped: 'The server has exited.',
   pressAnyKey: 'Press any key to close this window ...',

@@ -72,6 +72,26 @@ test('the hazard scanner finds a metacharacter trail byte and ignores clean text
   assert.equal(findDbcsHazard(hazardous, 65001), null)
 })
 
+test('a message only claims what the launcher actually does', () => {
+  // Both of these were real defects, reported from a double-click: the startup
+  // line announced a first run on every run, and the environment line promised
+  // four numbered steps that the launcher never numbered again. A message that
+  // asserts something the code does not do is a bug in the message.
+  for (const language of ['en', 'zh']) {
+    const messages = messagesFor(language, { name: 'DSH.bat', runner: 'npx' })
+    if (/first run|首次运行/.test(messages.launching)) {
+      assert.match(
+        messages.launching,
+        /If this is the first run|若是首次运行/,
+        `${language}: a first-run mention must be conditional`,
+      )
+    }
+    for (const [key, text] of Object.entries(messages)) {
+      assert.doesNotMatch(text, /\[\d+\/\d+\]/, `${language}.${key} must not number steps the launcher never continues`)
+    }
+  }
+})
+
 test('encoding verifies by decoding back, and reports the loss', () => {
   const chinese = '端口已经占用'
   const gbk = encodeForCodePage(chinese, 936)
