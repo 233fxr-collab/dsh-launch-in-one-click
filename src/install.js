@@ -445,6 +445,10 @@ export async function installLauncher(options = {}, overrides = {}) {
         path: targetPath, directory: targetDirectory, fileName: nameCheck.value, existing,
       })
     }
+    const pruned = pruneOlderBackups(targetDirectory, nameCheck.value, backupPath, deps.fs)
+    if (pruned.length > 0) {
+      warnings.push(`removed ${String(pruned.length)} older backup(s) of this launcher, keeping only the most recent`)
+    }
   }
 
   try {
@@ -537,6 +541,44 @@ function isSameLauncher(existingBytes, marker, newText, newBytes) {
 /** Replace the generation timestamp with a placeholder. */
 function stripTimestamp(text) {
   return text.replace(/ generated=\S+/, ' generated=<timestamp>')
+}
+
+/**
+ * Remove the backups a previous install of the same launcher left behind.
+ *
+ * A backup exists so the last replacement can be undone, and only the most
+ * recent one can do that. Without this, every regeneration dropped another
+ * `…bat.<timestamp>.bak` next to the launcher — reported by a user who found two
+ * files on their Desktop and did not know what the second one was. Nothing else
+ * is touched: the filter is this launcher's own name plus the `.bak` suffix.
+ *
+ * @param directory - directory holding the launcher.
+ * @param fileName - launcher file name, without any backup suffix.
+ * @param keepPath - the backup just written, which survives.
+ * @param fs - filesystem surface.
+ * @returns The paths removed, for the caller to report.
+ */
+function pruneOlderBackups(directory, fileName, keepPath, fs) {
+  let entries
+  try {
+    entries = fs.readdirSync(directory)
+  } catch {
+    return []
+  }
+  const prefix = `${fileName}.`
+  const removed = []
+  for (const entry of entries) {
+    if (!entry.startsWith(prefix) || !entry.endsWith('.bak')) continue
+    const path = join(directory, entry)
+    if (path === keepPath) continue
+    try {
+      fs.unlinkSync(path)
+      removed.push(path)
+    } catch {
+      /* a backup that cannot be removed is not worth failing an install over */
+    }
+  }
+  return removed
 }
 
 /** Restore a backup over a path that failed verification. */

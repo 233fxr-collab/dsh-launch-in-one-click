@@ -17,7 +17,7 @@
 
 import { createHash, randomBytes } from 'node:crypto'
 import {
-  closeSync, existsSync, openSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeSync,
+  closeSync, existsSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
@@ -35,7 +35,7 @@ export const RENAME_BACKOFF_MS = 25
  * as an opaque TypeError instead of a filesystem error.
  */
 export const REAL_FS = Object.freeze({
-  closeSync, existsSync, openSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeSync,
+  closeSync, existsSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeSync,
 })
 
 /** Default sleep. @param ms - milliseconds to wait. */

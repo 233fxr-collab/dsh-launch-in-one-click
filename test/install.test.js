@@ -5,7 +5,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import http from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -339,6 +339,35 @@ test('onlyIfAbsent finds a launcher saved under the other shipped name', async (
   assert.equal(result.unchanged, true)
   assert.equal(result.fileName, name, 'the file that is already there is the one reported')
 })
+
+test('backups do not pile up: only the newest survives', async () => {
+  // Reported from a real Desktop: two files, and no idea what the second was.
+  await install({ port: 3080 })
+  await install({ port: 3111 })
+  let remaining = backupsIn(directory)
+  assert.equal(remaining.length, 1, 'the first replacement keeps one backup')
+  assert.match(readFileSync(join(directory, remaining[0]), 'utf8'), /set "PORT=3080"/, 'holding the state it replaced')
+
+  await install({ port: 3222 })
+  remaining = backupsIn(directory)
+  assert.equal(remaining.length, 1, 'the older backup is removed rather than accumulated')
+  assert.match(readFileSync(join(directory, remaining[0]), 'utf8'), /set "PORT=3111"/, 'and the survivor is the most recent state')
+})
+
+test('pruning touches nothing but this launcher\u2019s own backups', async () => {
+  writeFileSync(join(directory, 'SomeoneElses.bak'), 'keep me\r\n')
+  writeFileSync(join(directory, 'DSH.bat.backup'), 'not our naming\r\n')
+  await install({ port: 3080 })
+  await install({ port: 3111 })
+  assert.equal(readFileSync(join(directory, 'SomeoneElses.bak'), 'utf8'), 'keep me\r\n')
+  assert.equal(readFileSync(join(directory, 'DSH.bat.backup'), 'utf8'), 'not our naming\r\n')
+  assert.equal(backupsIn(directory).length, 1)
+})
+
+/** The backups this launcher left behind in a directory. */
+function backupsIn(target) {
+  return readdirSync(target).filter((entry) => entry.startsWith('DSH.bat.') && entry.endsWith('.bak'))
+}
 
 test('the installed launcher is found under either shipped name', async () => {
   // Exercised through the real function, not a stub: the language switch reads
