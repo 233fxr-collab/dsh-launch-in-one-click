@@ -82,13 +82,14 @@ dsh plugin --profile web add github:233fxr-collab/dsh-launch-in-one-click
 
 | 工具 | 作用 |
 |---|---|
-| `launcher_doctor` | 只读诊断。报告 Node、npx、控制台代码页、解析出的桌面目录、它是否可写、目标端口被谁占用、以及已安装启动器的状态。可选地在试运行模式下运行已安装的启动器。 |
+| `launcher_doctor` | 只读诊断。报告 Node、npx、控制台代码页、解析出的桌面目录、它是否可写、目标端口被谁占用、npx 缓存里是哪个 harness 版本、以及已安装启动器的状态。可选地在试运行模式下运行已安装的启动器，或向 registry 查询已发布版本。 |
 | `launcher_install` | 写入启动器（原子写入、先备份、自检）。 |
-| `launcher_uninstall` | 删除**本插件写的**启动器。不是它写的文件默认拒绝删除，除非加 `force`。 |
+| `launcher_uninstall` | 删除**本插件写的**启动器以及它的备份。不是它写的文件默认拒绝删除，除非加 `force`。 |
 
 ```
 /launch                      用部署默认值安装
 /launch doctor               等同于 launcher_doctor 的报告
+/launch list                 列出本插件放到桌面上的每一个启动器及其设置
 /launch --port 3111          换一个端口启动
 /launch --lang zh            用中文写入启动器（--lang en | --lang auto）
 /launch --name "Work.bat"    指定文件名
@@ -98,6 +99,23 @@ dsh plugin --profile web add github:233fxr-collab/dsh-launch-in-one-click
 
 `--language` 是 `--lang` 的完整写法。切换语言会重写本插件写出的那个启动器（保留带时间戳的备份），
 其余部分不变：端口、工作区、启动方式都保持原样。
+
+### 启动器自己的参数
+
+| 参数 | 作用 |
+|---|---|
+| `--port N` | 换端口启动 |
+| `--workdir DIR` | 换工作区 |
+| `--no-open` | 不自动打开浏览器 |
+| `--silent` | 不显示控制台窗口启动，过程写进日志 |
+| `--dry-run` | 只检查并打印计划，不启动 |
+| `--help` | 显示帮助 |
+
+### 每次运行都会留下日志
+
+`%LOCALAPPDATA%\dsh-launch\launcher.log` 记录启动器做过的判断——环境检查、工作区、端口结论、
+要执行的命令、退出码——因为控制台窗口一关就什么都看不到了。`--silent` 完全没有窗口，写的也是它。
+失败退出时会打印日志路径。
 
 启动器本身接受 `--port N`、`--workdir DIR`、`--no-open`、`--dry-run`、`--help`。
 

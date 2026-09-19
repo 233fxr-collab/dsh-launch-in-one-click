@@ -103,13 +103,14 @@ Three tools, plus a slash command.
 
 | Tool | Effect |
 |---|---|
-| `launcher_doctor` | Read-only. Reports Node, npx, the console code page, the resolved Desktop, whether it is writable, what holds the target port, and the state of any launcher already installed. Optionally runs an installed launcher in dry-run mode. |
+| `launcher_doctor` | Read-only. Reports Node, npx, the console code page, the resolved Desktop, whether it is writable, what holds the target port, which harness version npx has cached, and the state of any launcher already installed. Optionally runs an installed launcher in dry-run mode, or asks the registry for the published harness version. |
 | `launcher_install` | Writes the launcher (atomic, backed up, self-tested). |
-| `launcher_uninstall` | Deletes a launcher **this plugin wrote**. Refuses a file it did not write unless `force` is set. |
+| `launcher_uninstall` | Deletes a launcher **this plugin wrote**, and the backups of it. Refuses a file it did not write unless `force` is set. |
 
 ```
 /launch                      install with the deployment defaults
 /launch doctor               same report as launcher_doctor
+/launch list                 every launcher this plugin put on the Desktop, with its settings
 /launch --port 3111          start the harness on another port
 /launch --lang zh            write the launcher in Chinese  (--lang en | --lang auto)
 /launch --name "Work.bat"    choose the file name
@@ -120,6 +121,25 @@ Three tools, plus a slash command.
 `--language` is the long form of `--lang`. Switching language rewrites the
 launcher this plugin wrote, keeping a timestamped backup, and changes nothing
 else about it: the port, the workspace, and the runner stay as they were.
+
+### The launcher's own flags
+
+| Flag | Effect |
+|---|---|
+| `--port N` | start on another port |
+| `--workdir DIR` | use another workspace |
+| `--no-open` | do not open the browser |
+| `--silent` | start with no console window; the run goes to the log |
+| `--dry-run` | checks and a plan, no launch |
+| `--help` | usage |
+
+### Every run leaves a log
+
+`%LOCALAPPDATA%\dsh-launch\launcher.log` records what the launcher decided —
+the environment check, the workspace, the port verdict, the command, and the
+exit code — because the console window is gone the moment it closes. That is
+also what `--silent` writes to, since it has no window at all. The log path is
+printed on the way out of a failed run.
 
 The launcher itself accepts `--port N`, `--workdir DIR`, `--no-open`,
 `--dry-run`, and `--help`.

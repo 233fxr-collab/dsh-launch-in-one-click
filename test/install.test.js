@@ -10,7 +10,8 @@ import http from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, beforeEach, test } from 'node:test'
-import { DEFAULT_FILE_NAMES, findInstalledLauncher, installLauncher, inspectLauncher, uninstallLauncher, verifyLauncherByRunning } from '../src/install.js'
+import { DEFAULT_FILE_NAMES, findInstalledLauncher, installLauncher, inspectLauncher, listInstalledLaunchers, uninstallLauncher, verifyLauncherByRunning } from '../src/install.js'
+import { REAL_FS } from '../src/atomic.js'
 import { readLauncherMarker } from '../src/bat-template.js'
 import { encodeForCodePage } from '../src/encoding.js'
 
@@ -399,6 +400,48 @@ test('a recorded work directory survives inspection in a non-ASCII path', async 
   const found = await findInstalledLauncher({ directory }, deps())
   assert.equal(found.config.workdir, chinese)
   assert.equal(found.config.port, '3111')
+})
+
+test('uninstall takes the backups with it', async () => {
+  await install({ port: 3080 })
+  await install({ port: 3111 })
+  assert.equal(backupsIn(directory).length, 1, 'one backup exists before the uninstall')
+
+  const result = await uninstallLauncher({ path: join(directory, 'DSH.bat') }, deps())
+  assert.equal(result.ok, true)
+  assert.equal(result.removed, true)
+  assert.equal(result.removedBackups.length, 1, 'a backup of a launcher that is gone rolls nothing back')
+  assert.deepEqual(backupsIn(directory), [], 'and the desktop is left with neither')
+})
+
+test('uninstall leaves another file\u2019s backups alone', async () => {
+  writeFileSync(join(directory, 'SomeoneElses.bat.bak'), 'keep me\r\n')
+  await install({ port: 3080 })
+  await install({ port: 3111 })
+  await uninstallLauncher({ path: join(directory, 'DSH.bat') }, deps())
+  assert.equal(readFileSync(join(directory, 'SomeoneElses.bat.bak'), 'utf8'), 'keep me\r\n')
+})
+
+test('listing finds every launcher this plugin wrote, and nothing else', async () => {
+  assert.deepEqual(await listInstalledLaunchers({ directory }, deps()), [])
+
+  writeFileSync(join(directory, 'SomeoneElses.bat'), 'not ours\r\n')
+  writeFileSync(join(directory, 'notes.txt'), 'not a command script\r\n')
+  const first = await install({ fileName: DEFAULT_FILE_NAMES.zh, port: 3080 })
+  assert.equal(first.ok, true, `${String(first.reason)}: ${String(first.hint)}`)
+  await install({ fileName: 'Second.bat', port: 3111 })
+
+  const found = await listInstalledLaunchers({ directory }, deps())
+  assert.deepEqual(found.map((entry) => entry.fileName).sort(), [DEFAULT_FILE_NAMES.zh, 'Second.bat'].sort())
+  assert.equal(found.find((entry) => entry.fileName === 'Second.bat').config.port, '3111')
+  assert.equal(found.every((entry) => entry.owned), true)
+})
+
+test('listing a directory that cannot be read is empty, not a throw', async () => {
+  const found = await listInstalledLaunchers({ directory }, deps({
+    fs: { ...REAL_FS, readdirSync: () => { throw new Error('EPERM') } },
+  }))
+  assert.deepEqual(found, [])
 })
 
 test('the real runner executes the launcher and reports its dry run', async (t) => {

@@ -35,7 +35,10 @@ function applyToStub(overrides = {}) {
   const context = { ...stubContext(), ...overrides }
   context.tools = { register: (definition) => { context.registered.push(definition) } }
   context.registered = []
-  apply(context, undefined)
+  // Both provisioning switches off, which is the documented way to load this
+  // plugin without touching anything. A test run that left them at their
+  // defaults wrote to the developer's real Desktop — measured, not theorised.
+  apply(context, { provisionOnLoad: false, autoUpdate: false })
   return context
 }
 
@@ -51,6 +54,8 @@ test('configuration carries every documented default', () => {
   assert.equal(resolved.runner, 'npx')
   assert.equal(resolved.packageSpec, '@deepseek-ai/dsh')
   assert.equal(resolved.openBrowser, true)
+  assert.equal(resolved.provisionOnLoad, true, 'a fresh install should put the launcher on the Desktop')
+  assert.equal(resolved.autoUpdate, true, 'and keep it matched to the installed build')
 })
 
 test('applying registers three tools and one command', () => {
@@ -115,9 +120,33 @@ function installedHarnessVersion() {
   }
 }
 
+test('the command can list what it already put on the Desktop', async () => {
+  const deployment = { defaultPort: 3080, language: 'auto', runner: 'npx', packageSpec: '@deepseek-ai/dsh', openBrowser: true }
+  const launchers = [
+    {
+      path: 'C:\\Users\\me\\Desktop\\启动 DeepSeek Harness.bat',
+      fileName: '启动 DeepSeek Harness.bat',
+      version: PLUGIN_VERSION,
+      config: { port: '3080', workdir: 'C:\\work', lang: 'zh' },
+    },
+    { path: 'C:\\Users\\me\\Desktop\\Older.bat', fileName: 'Older.bat', version: '0.9.0', config: { port: '3111' } },
+  ]
+  const result = await handleLaunchCommand('list', deployment, { list: async () => launchers })
+  assert.equal(result.kind, 'success')
+  assert.match(result.text, /port 3080/)
+  assert.match(result.text, /C:\\work/)
+  assert.match(result.text, /port 3111/)
+  assert.match(result.text, /refreshes on load/, 'an outdated launcher is named as such')
+
+  const empty = await handleLaunchCommand('list', deployment, { list: async () => [] })
+  assert.equal(empty.kind, 'success')
+  assert.match(empty.text, /No launcher of this plugin is on the Desktop/)
+})
+
 test('the command grammar accepts the documented switches', () => {
   assert.deepEqual(parseLaunchInput('').error, null)
   assert.equal(parseLaunchInput('doctor').doctor, true)
+  assert.equal(parseLaunchInput('list').list, true)
   assert.equal(parseLaunchInput('--port 3111').port, 3111)
   assert.equal(parseLaunchInput('--name Custom.bat').fileName, 'Custom.bat')
   assert.equal(parseLaunchInput('--overwrite').overwrite, true)

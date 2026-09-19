@@ -1,6 +1,6 @@
 {
   "name": "dsh-launch-in-one-click",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Generates and installs a verified one-click desktop launcher for DeepSeek Harness on Windows, after checking Node, npx, the desktop folder, and whether the target port is already serving a Harness instance.",
   "type": "module",
   "main": "src/index.js",

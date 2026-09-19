@@ -168,6 +168,63 @@ test('the file itself carries the code page it was written for', { skip: !window
   assert.equal(launcher.language, 'zh')
 })
 
+test('the launcher writes a run log, in a place the caller chooses', { skip: !windowsOnly }, async () => {
+  // LOCALAPPDATA is redirected so the test reads its own log instead of the one
+  // this machine's own double-clicks write.
+  const logRoot = mkdtempSync(join(tmpdir(), 'dsh-launch-log-'))
+  created.push(logRoot)
+  const env = { ...process.env, LOCALAPPDATA: logRoot }
+  const launcher = await write('logged.bat', { port: freePort })
+
+  const result = await run(launcher, ['--dry-run'], env)
+  assert.equal(result.code, EXIT.OK, result.output)
+
+  const log = readFileSync(join(logRoot, 'dsh-launch', 'launcher.log'), 'utf8')
+  assert.match(log, /port 3080|port \d+/)
+  assert.match(log, new RegExp(`port ${String(freePort)} is free`))
+  assert.match(log, /exit 0/, 'the exit code is what the window would have shown')
+})
+
+test('a refusal is logged with its reason, not just its code', { skip: !windowsOnly }, async () => {
+  const logRoot = mkdtempSync(join(tmpdir(), 'dsh-launch-log-'))
+  created.push(logRoot)
+  const env = { ...process.env, LOCALAPPDATA: logRoot }
+  const launcher = await write('logged-refusal.bat', { port: harnessPort })
+
+  const result = await run(launcher, ['--dry-run'], env)
+  assert.equal(result.code, EXIT.PORT_DSH, result.output)
+  const log = readFileSync(join(logRoot, 'dsh-launch', 'launcher.log'), 'utf8')
+  assert.match(log, /refused: port \d+ already serves a harness instance/)
+  assert.match(log, /exit 2/)
+})
+
+test('--silent hands off to a hidden copy that keeps the run a dry run', { skip: !windowsOnly }, async () => {
+  // The parent must return immediately, and the hidden child must honour the
+  // flags it was given — otherwise a silent dry run would start a real server.
+  const logRoot = mkdtempSync(join(tmpdir(), 'dsh-launch-log-'))
+  created.push(logRoot)
+  const env = { ...process.env, LOCALAPPDATA: logRoot }
+  const launcher = await write('silent.bat', { port: freePort })
+
+  const result = await run(launcher, ['--silent', '--dry-run'], env)
+  assert.equal(result.code, EXIT.OK, result.output)
+
+  const logPath = join(logRoot, 'dsh-launch', 'launcher.log')
+  let log = ''
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      log = readFileSync(logPath, 'utf8')
+    } catch {
+      log = ''
+    }
+    if (log.includes('exit 0') && log.includes('handed off')) break
+    await new Promise((resolve) => { setTimeout(resolve, 500) })
+  }
+  assert.match(log, /handed off to a hidden copy/, 'the parent logged the hand-off')
+  assert.match(log, /exit 0/, 'and the hidden copy ran to completion')
+  assert.doesNotMatch(log, /run: .*web --port/, 'a silent dry run must not reach the run line')
+})
+
 test('the runner can be baked as the installed command instead of npx', { skip: !windowsOnly }, async () => {
   const launcher = await write('runner.bat', { port: freePort, runner: 'dsh' })
   const result = await run(launcher, ['--dry-run'])

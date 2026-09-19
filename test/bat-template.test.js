@@ -1,4 +1,4 @@
-﻿/**
+/**
  * The batch file the plugin generates: its shape, its ordering guarantees, and
  * the marker that lets a later run recognize it as its own.
  */
@@ -67,6 +67,49 @@ test('the launcher is CRLF and carries no BOM in either encoding', () => {
     assert.notDeepEqual([...encoded.bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf])
     assert.equal(encoded.bytes.subarray(0, 11).toString('latin1'), '@echo off\r\n')
   }
+})
+
+test('the launcher logs its run, and a hidden run does not wait for a keypress', () => {
+  const text = render()
+  // The log lives beside the user's other application data, falls back to NUL
+  // when it cannot be created, and appends through one routine.
+  assert.match(text, /set "LOGDIR=%LOCALAPPDATA%\\dsh-launch"/)
+  assert.match(text, /if not exist "%LOGDIR%" set "LOG=NUL"/)
+  assert.match(text, /^:log$/m)
+  assert.match(text, />>"%LOG%" echo %~1/)
+  assert.match(text, /call :log "refused: port %PORT% already serves a harness instance"/)
+  assert.match(text, /call :log "exit %EXITCODE%"/)
+  // A hidden window can never receive the keypress a pause waits for.
+  assert.match(text, /if defined DSH_LAUNCH_HIDDEN \(endlocal & exit \/b %EXITCODE%\)/)
+  assert.doesNotMatch(text, /if defined DSH_LAUNCH_HIDDEN endlocal/, 'an ungrouped ampersand would exit unconditionally')
+})
+
+test('the silent hand-off uses the path captured before the argument parser', () => {
+  // `shift` moves %0 as well, so reading %~f0 after parsing yields the last flag
+  // — measured, with the launcher trying to Start-Process `--dry-run`.
+  const text = render()
+  const lines = text.split('\n')
+  const capture = lines.findIndex((line) => line.startsWith('set "SELF=%~f0"'))
+  const firstShift = lines.findIndex((line) => line.trim() === 'shift')
+  assert.ok(capture > 0, 'the file must capture its own path')
+  assert.ok(firstShift > capture, 'and capture it before anything shifts the arguments')
+  assert.match(text, /Start-Process -FilePath \$env:DSH_LAUNCH_SELF -WindowStyle Hidden/)
+  assert.doesNotMatch(text, /Start-Process -FilePath '/, 'never interpolate the path into the command text')
+  assert.match(text, /if \/i "%~1"=="--silent" goto arg_silent/)
+  assert.match(text, /if "%SILENT%"=="1" if not defined DSH_LAUNCH_HIDDEN goto silent_relaunch/)
+})
+
+test('the silent hand-off passes the resolved settings in the environment', () => {
+  const text = render()
+  for (const name of ['PORT', 'WORKDIR', 'NOOPEN', 'DRYRUN']) {
+    assert.ok(text.includes(`set "DSH_LAUNCH_${name}=`), `the child needs ${name}`)
+    assert.ok(text.includes(`if defined DSH_LAUNCH_${name} set "`), `and the child must read ${name} back`)
+  }
+})
+
+test('the marker records the browser behaviour as well', () => {
+  assert.match(render({ openBrowser: true }), /@config .* openBrowser=1 /)
+  assert.match(render({ openBrowser: false }), /@config .* openBrowser=0 /)
 })
 
 test('the marker round-trips with its version and config', () => {

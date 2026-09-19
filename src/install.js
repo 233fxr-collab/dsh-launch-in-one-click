@@ -16,7 +16,7 @@
  * @module dsh-launch-in-one-click/install
  */
 
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import {
   REAL_FS, errorCode, hashBytes, probeWritableDirectory, readFileBytes, removeQuietly, writeFileAtomic,
 } from './atomic.js'
@@ -31,7 +31,7 @@ import {
 } from './validate.js'
 
 /** Plugin version recorded in every generated launcher. */
-export const PLUGIN_VERSION = '1.1.0'
+export const PLUGIN_VERSION = '1.2.0'
 
 /** Default launcher name per resolved language. */
 const DEFAULT_FILE_NAMES = Object.freeze({ zh: '启动 DeepSeek Harness.bat', en: 'Launch DeepSeek Harness.bat' })
@@ -627,6 +627,45 @@ export async function findInstalledLauncher(options = {}, overrides = {}) {
 }
 
 /**
+ * List every launcher this plugin wrote in a directory.
+ *
+ * Only command scripts are opened, and only ones small enough to be a generated
+ * launcher, so listing a Desktop full of files costs one bounded scan rather
+ * than reading whatever else is there.
+ *
+ * @param options - directory to scan, defaulting to the resolved Desktop.
+ * @param overrides - dependency overrides for tests.
+ * @returns One inspection per launcher, in name order.
+ */
+export async function listInstalledLaunchers(options = {}, overrides = {}) {
+  const deps = { ...defaultDeps(), ...overrides }
+  const { directory, env = process.env, platform = process.platform } = options
+
+  let targetDirectory = directory
+  if (targetDirectory === undefined) {
+    const desktop = await deps.resolveDesktopDirectory({ run: deps.run, env, platform })
+    if (desktop.path === null) return []
+    targetDirectory = desktop.path
+  }
+
+  let entries
+  try {
+    entries = deps.fs.readdirSync(targetDirectory)
+  } catch {
+    return []
+  }
+
+  const found = []
+  for (const entry of [...entries].sort()) {
+    if (!/\.(bat|cmd)$/i.test(entry)) continue
+    const path = join(targetDirectory, entry)
+    const inspected = deps.inspectLauncher(path, { fs: deps.fs })
+    if (inspected.exists && inspected.owned) found.push({ ...inspected, fileName: entry })
+  }
+  return found
+}
+
+/**
  * Remove a launcher this plugin wrote.
  * @param options - target directory, file name, or an explicit path, plus force.
  * @param overrides - dependency overrides for tests.
@@ -637,7 +676,7 @@ export async function uninstallLauncher(options = {}, overrides = {}) {
   const { path, directory, fileName, force = false, env = process.env, platform = process.platform } = options
 
   if (platform !== 'win32') {
-    return { ok: false, reason: 'unsupported-platform', hint: 'This plugin installs Windows launchers only.', path: null, removed: false, existing: 'none' }
+    return { ok: false, reason: 'unsupported-platform', hint: 'This plugin installs Windows launchers only.', path: null, removed: false, existing: 'none', removedBackups: [] }
   }
 
   let target = path
@@ -646,7 +685,7 @@ export async function uninstallLauncher(options = {}, overrides = {}) {
     if (targetDirectory === undefined) {
       const desktop = await deps.resolveDesktopDirectory({ run: deps.run, env, platform })
       if (desktop.path === null) {
-        return { ok: false, reason: 'desktop-not-found', hint: 'Pass the directory or path explicitly.', path: null, removed: false, existing: 'none' }
+        return { ok: false, reason: 'desktop-not-found', hint: 'Pass the directory or path explicitly.', path: null, removed: false, existing: 'none', removedBackups: [] }
       }
       targetDirectory = desktop.path
     }
@@ -656,7 +695,7 @@ export async function uninstallLauncher(options = {}, overrides = {}) {
 
   const bytes = deps.readFileBytes(target, deps.fs)
   if (bytes === null) {
-    return { ok: true, reason: null, hint: null, path: target, removed: false, existing: 'none' }
+    return { ok: true, reason: null, hint: null, path: target, removed: false, existing: 'none', removedBackups: [] }
   }
   const marker = readLauncherMarker(bytes.toString('latin1'))
   if (!marker.owned && force !== true) {
@@ -667,14 +706,18 @@ export async function uninstallLauncher(options = {}, overrides = {}) {
       path: target,
       removed: false,
       existing: 'foreign',
+      removedBackups: [],
     }
   }
   try {
     deps.removeQuietly(target, deps.fs)
   } catch (error) {
-    return { ok: false, reason: 'remove-failed', hint: `${target}: ${failureDetail(error)}`, path: target, removed: false, existing: marker.owned ? 'ours' : 'foreign' }
+    return { ok: false, reason: 'remove-failed', hint: `${target}: ${failureDetail(error)}`, path: target, removed: false, existing: marker.owned ? 'ours' : 'foreign', removedBackups: [] }
   }
   const gone = deps.readFileBytes(target, deps.fs) === null
+  // The backups exist to undo a replacement of this launcher. With the launcher
+  // gone they roll nothing back, so they leave with it.
+  const removedBackups = gone ? pruneOlderBackups(dirname(target), basename(target), null, deps.fs) : []
   return {
     ok: gone,
     reason: gone ? null : 'remove-failed',
@@ -682,6 +725,7 @@ export async function uninstallLauncher(options = {}, overrides = {}) {
     path: target,
     removed: gone,
     existing: marker.owned ? 'ours' : 'foreign',
+    removedBackups,
   }
 }
 

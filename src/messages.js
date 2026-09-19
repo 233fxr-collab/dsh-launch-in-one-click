@@ -21,14 +21,22 @@ const FORBIDDEN_IN_ECHO = /[%&|<>^()!"\r\n]/
 const PLACEHOLDER = /\{([a-zA-Z][a-zA-Z0-9]*)\}/g
 
 /**
+ * Variable references a message may carry. Everything else with a percent sign
+ * is a typo or an injection, and is rejected rather than expanded by cmd into
+ * something neither the author nor the reader expected.
+ */
+const PERMITTED_VARIABLE_REFERENCES = Object.freeze(['%PORT%', '%LOG%'])
+
+/**
  * Assert a message is safe to print with `echo` from a batch file.
  * @param text - the catalog entry.
  * @param label - catalog key, used in the error message.
  * @throws when the text contains a cmd metacharacter.
  */
 export function assertEchoSafe(text, label = 'message') {
-  const withoutPortReference = text.split('%PORT%').join('')
-  const offending = FORBIDDEN_IN_ECHO.exec(withoutPortReference)
+  let remaining = text
+  for (const reference of PERMITTED_VARIABLE_REFERENCES) remaining = remaining.split(reference).join('')
+  const offending = FORBIDDEN_IN_ECHO.exec(remaining)
   if (offending !== null) {
     throw new Error(
       `dsh-launch-in-one-click: message "${label}" contains ${JSON.stringify(offending[0])}, `
@@ -86,6 +94,9 @@ const ZH = Object.freeze({
   helpNoOpen: '  --no-open       不自动打开浏览器',
   helpDryRun: '  --dry-run       只做检查并打印将要执行的命令',
   helpHelp: '  --help          显示这段帮助',
+  helpSilent: '  --silent        不显示控制台窗口启动，过程写入日志',
+  silentFallback: '没有找到 PowerShell，无法隐藏启动，改为正常显示窗口。',
+  logHint: '    过程与退出码已写入日志： %LOG%',
 })
 
 /** English catalog — the fallback when the console code page cannot carry Chinese. */
@@ -121,6 +132,9 @@ const EN = Object.freeze({
   helpNoOpen: '  --no-open       do not open the browser',
   helpDryRun: '  --dry-run       run the checks and print the command only',
   helpHelp: '  --help          show this help',
+  helpSilent: '  --silent        start without a console window, logging the run',
+  silentFallback: 'PowerShell was not found, so this run cannot be hidden; showing the window instead.',
+  logHint: '    The run and its exit code are in the log: %LOG%',
 })
 
 /** Catalog id to catalog. @type {Record<string, Readonly<Record<string, string>>>} */

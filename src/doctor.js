@@ -24,6 +24,8 @@ import { runPortProbe } from './probe.js'
 import { runCommand } from './run.js'
 import { checkPort, checkRunner } from './validate.js'
 import { resolveExecutable } from './which.js'
+import { fetchPublishedHarnessVersion, readCachedHarnessVersion } from './npx.js'
+import { compareVersions } from './versions.js'
 
 /** Node major version the harness targets; older versions are reported as a warning. */
 export const RECOMMENDED_NODE_MAJOR = 22
@@ -40,6 +42,8 @@ function defaultDeps() {
     probeWritableDirectory,
     verifyLauncherByRunning,
     inspectLauncher,
+    readCachedHarnessVersion,
+    fetchPublishedHarnessVersion,
   }
 }
 
@@ -72,8 +76,10 @@ export async function runDoctor(options = {}, overrides = {}) {
     directory,
     fileName,
     runner = 'npx',
+    packageSpec = '@deepseek-ai/dsh',
     probeWrite = true,
     verifyExecution = false,
+    checkRegistry = false,
     signal,
     env = process.env,
     platform = process.platform,
@@ -115,6 +121,30 @@ export async function runDoctor(options = {}, overrides = {}) {
     checks.push(runnerPath === null
       ? check('runner', 'fail', `${runnerCheck.value} is not on PATH, so the launcher could not start the harness.`)
       : check('runner', 'ok', `${runnerCheck.value} at ${runnerPath}`))
+  }
+
+  // --- The harness npx will start ------------------------------------------
+  //
+  // `npx @deepseek-ai/dsh` resolves the published version on every run, so the
+  // version is never stale. What is worth knowing is whether the next start has
+  // to download one first.
+  let harnessCached = null
+  let harnessPublished = null
+  if (runnerCheck.ok && runnerCheck.value === 'npx') {
+    harnessCached = deps.readCachedHarnessVersion(packageSpec, { env, fs: deps.fs })
+    if (checkRegistry) {
+      harnessPublished = await deps.fetchPublishedHarnessVersion(packageSpec, { run: deps.run, env, signal })
+    }
+    const newer = harnessCached !== null && harnessPublished !== null && compareVersions(harnessPublished, harnessCached) === 1
+    if (harnessCached === null) {
+      checks.push(check('harness', 'info', `no cached copy of ${packageSpec} yet; the first start downloads it.`))
+    } else if (newer) {
+      checks.push(check('harness', 'warn', `npx has ${harnessCached} cached and ${harnessPublished} is published; the next start downloads the newer one first.`))
+    } else if (checkRegistry) {
+      checks.push(check('harness', 'ok', `${packageSpec} ${harnessCached} is what the registry publishes.`))
+    } else {
+      checks.push(check('harness', 'ok', `${packageSpec} ${harnessCached} is cached; pass check_registry to compare with what is published.`))
+    }
   }
 
   // --- Console code page ----------------------------------------------------
@@ -257,6 +287,8 @@ export async function runDoctor(options = {}, overrides = {}) {
     nodePath,
     runner: runnerCheck.ok ? runnerCheck.value : null,
     runnerPath,
+    harnessCached,
+    harnessPublished,
     execution,
   }
 }

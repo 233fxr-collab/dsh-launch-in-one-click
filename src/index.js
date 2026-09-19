@@ -15,7 +15,7 @@
 
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { DEFAULT_FILE_NAMES, PLUGIN_VERSION, findInstalledLauncher, installLauncher, uninstallLauncher } from './install.js'
+import { DEFAULT_FILE_NAMES, PLUGIN_VERSION, findInstalledLauncher, installLauncher, listInstalledLaunchers, uninstallLauncher } from './install.js'
 import { describeProvision, provisionLauncher } from './provision.js'
 import { runDoctor } from './doctor.js'
 import { LANGUAGES, RUNNERS, checkLanguage } from './validate.js'
@@ -139,7 +139,10 @@ function renderDoctor(report) {
 /** Render one removal result as model-facing text. */
 function renderUninstall(result) {
   if (result.ok) {
-    return [{ type: 'text', text: result.removed ? `Removed ${String(result.path)}` : `Nothing to remove at ${String(result.path)}` }]
+    if (!result.removed) return [{ type: 'text', text: `Nothing to remove at ${String(result.path)}` }]
+    const backups = result.removedBackups ?? []
+    const also = backups.length === 0 ? '' : ` and ${String(backups.length)} backup(s) of it`
+    return [{ type: 'text', text: `Removed ${String(result.path)}${also}` }]
   }
   return [{ type: 'text', text: `Not removed: ${String(result.reason)}\n  ${String(result.hint)}` }]
 }
@@ -198,6 +201,7 @@ export function apply(ctx, config) {
       file_name: { type: 'string', description: 'Launcher file name, ending in .bat or .cmd.' },
       runner: { type: 'string', enum: [...RUNNERS], description: 'Command the launcher starts the harness with.' },
       verify_execution: { type: 'boolean', description: 'Also execute an installed launcher in dry-run mode to prove it still works.' },
+      check_registry: { type: 'boolean', description: 'Also ask the registry which harness version is published, which costs a network round trip.' },
     },
     output: {
       schema: {
@@ -220,6 +224,8 @@ export function apply(ctx, config) {
           nodeVersion: { ...nullableString, required: true },
           runner: { ...nullableString, required: true },
           runnerPath: { ...nullableString, required: true },
+          harnessCached: { ...nullableString, required: true, description: 'Harness version npx already has, when npx is the runner.' },
+          harnessPublished: { ...nullableString, required: true, description: 'Harness version the registry publishes, when it was asked.' },
           checks: {
             type: 'array',
             required: true,
@@ -254,6 +260,8 @@ export function apply(ctx, config) {
       fileName: args.file_name,
       runner: args.runner ?? deployment.runner,
       verifyExecution: args.verify_execution === true,
+      checkRegistry: args.check_registry === true,
+      packageSpec: deployment.packageSpec,
       signal: exec.signal,
     }),
   }))
@@ -322,6 +330,12 @@ export function apply(ctx, config) {
           path: { ...nullableString, required: true },
           removed: { type: 'boolean', required: true },
           existing: { type: 'string', required: true },
+          removedBackups: {
+            type: 'array',
+            required: true,
+            items: { type: 'string' },
+            description: 'Backups of the launcher that left with it.',
+          },
         },
       },
       render: (_args, value) => renderUninstall(value),
@@ -340,6 +354,7 @@ export function apply(ctx, config) {
         path: result.path ?? null,
         removed: result.removed === true,
         existing: result.existing ?? 'none',
+        removedBackups: result.removedBackups ?? [],
       }
     },
   }))
@@ -348,7 +363,7 @@ export function apply(ctx, config) {
     commandCtx.commands.register({
       name: 'launch',
       description: 'Install a one-click DeepSeek Harness launcher on the Desktop, in either language',
-      input: { hint: '[doctor] [--port N] [--lang auto|en|zh] [--name FILE] [--overwrite] [--dry-run]' },
+      input: { hint: '[doctor|list] [--port N] [--lang auto|en|zh] [--name FILE] [--overwrite] [--dry-run]' },
       handler: async ({ rawInput }) => await handleLaunchCommand(rawInput ?? '', deployment),
     })
   })
@@ -373,11 +388,29 @@ export async function handleLaunchCommand(rawInput, deployment, overrides = {}) 
     install = installLauncher,
     doctor = runDoctor,
     find = findInstalledLauncher,
+    list = listInstalledLaunchers,
     workdir = process.cwd(),
   } = overrides
 
   const parsed = parseLaunchInput(rawInput)
   if (parsed.error !== null) return { kind: 'error', text: parsed.error }
+
+  if (parsed.list) {
+    const launchers = await list({ fileName: parsed.fileName })
+    if (launchers.length === 0) {
+      return { kind: 'success', text: 'No launcher of this plugin is on the Desktop; /launch writes one.' }
+    }
+    const lines = launchers.map((entry) => {
+      const recorded = entry.config ?? {}
+      const parts = [String(entry.path)]
+      if (recorded.port !== undefined) parts.push(`port ${String(recorded.port)}`)
+      if (recorded.workdir !== undefined) parts.push(String(recorded.workdir))
+      if (recorded.lang !== undefined) parts.push(String(recorded.lang))
+      parts.push(entry.version === PLUGIN_VERSION ? `v${String(entry.version)}` : `v${String(entry.version)} (refreshes on load)`)
+      return parts.join('  ·  ')
+    })
+    return { kind: 'success', text: lines.join('\n') }
+  }
 
   if (parsed.doctor) {
     const report = await doctor({
@@ -432,6 +465,7 @@ export function parseLaunchInput(raw) {
   const tokens = String(raw).trim().split(/\s+/).filter((token) => token.length > 0)
   const parsed = {
     doctor: false,
+    list: false,
     overwrite: false,
     dryRun: false,
     port: null,
@@ -443,6 +477,7 @@ export function parseLaunchInput(raw) {
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index]
     if (token === 'doctor') { parsed.doctor = true; continue }
+    if (token === 'list') { parsed.list = true; continue }
     if (token === '--overwrite') { parsed.overwrite = true; continue }
     if (token === '--dry-run') { parsed.dryRun = true; continue }
     if (token === '--port') {
@@ -471,7 +506,7 @@ export function parseLaunchInput(raw) {
       continue
     }
     if (token === '--help' || token === '-h') {
-      return { ...parsed, error: `Usage: /launch [doctor] [--port N] [--lang ${LANGUAGES.join('|')}] [--name FILE.bat] [--overwrite] [--dry-run]` }
+      return { ...parsed, error: `Usage: /launch [doctor|list] [--port N] [--lang ${LANGUAGES.join('|')}] [--name FILE.bat] [--overwrite] [--dry-run]` }
     }
     return { ...parsed, error: `Unrecognized argument: ${token}` }
   }
