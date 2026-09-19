@@ -18,7 +18,7 @@ import { join } from 'node:path'
 import { REAL_FS, probeWritableDirectory } from './atomic.js'
 import { resolveDesktopDirectory } from './desktop.js'
 import { detectLauncherCodePage } from './encoding.js'
-import { DEFAULT_FILE_NAMES, inspectLauncher, verifyLauncherByRunning } from './install.js'
+import { DEFAULT_FILE_NAMES, PLUGIN_VERSION, inspectLauncher, verifyLauncherByRunning } from './install.js'
 import { findPortOwner } from './netstat.js'
 import { runPortProbe } from './probe.js'
 import { runCommand } from './run.js'
@@ -186,22 +186,45 @@ export async function runDoctor(options = {}, overrides = {}) {
   }
 
   // --- Installed launcher ---------------------------------------------------
-  const resolvedName = fileName ?? DEFAULT_FILE_NAMES.zh
-  const targetPath = targetDirectory === undefined ? null : join(targetDirectory, resolvedName)
-  let installed = { exists: false, owned: false, version: null, config: null, bytes: 0, sha256: null, path: targetPath }
-  if (targetPath !== null) {
-    installed = deps.inspectLauncher(targetPath, { fs: deps.fs })
+  //
+  // Both shipped names are inspected, not just the language's default: the file
+  // on the Desktop was written in whichever language the console implied at the
+  // time, and reporting "does not exist yet" for a launcher sitting right there
+  // is worse than useless.
+  let installed = { exists: false, owned: false, version: null, config: null, bytes: 0, sha256: null, path: null, fileName: null }
+  if (targetDirectory !== undefined) {
+    const wanted = fileName === undefined ? [DEFAULT_FILE_NAMES.zh, DEFAULT_FILE_NAMES.en] : [fileName]
+    for (const name of wanted) {
+      const inspected = deps.inspectLauncher(join(targetDirectory, name), { fs: deps.fs })
+      if (inspected.exists) {
+        installed = { ...inspected, fileName: name }
+        break
+      }
+      installed = { ...inspected, fileName: name }
+    }
     if (!installed.exists) {
-      checks.push(check('launcher', 'info', `${targetPath} does not exist yet.`))
+      checks.push(check('launcher', 'info', `${join(targetDirectory, wanted[0])} does not exist yet.`))
     } else if (!installed.owned) {
-      checks.push(check('launcher', 'warn', `${targetPath} exists but was not written by this plugin; installing needs overwrite.`))
+      checks.push(check('launcher', 'warn', `${String(installed.path)} exists but was not written by this plugin; installing needs overwrite.`))
+    } else if (installed.version !== PLUGIN_VERSION) {
+      checks.push(check(
+        'launcher',
+        'warn',
+        `${String(installed.path)} was written by v${String(installed.version)}; this plugin is v${PLUGIN_VERSION} and refreshes it on load unless autoUpdate is off.`,
+      ))
     } else {
-      checks.push(check('launcher', 'ok', `${targetPath} (v${String(installed.version)}, ${String(installed.bytes)} bytes)`))
+      checks.push(check('launcher', 'ok', `${String(installed.path)} (v${String(installed.version)}, ${String(installed.bytes)} bytes)`))
     }
   }
 
   let execution = null
-  if (verifyExecution && targetPath !== null && installed.exists && installed.owned && platform === 'win32') {
+  // The path reported is the launcher that is there when one is, and otherwise
+  // the one an install would write — a caller asking "where would this go" gets
+  // an answer either way.
+  const targetPath = installed.exists
+    ? installed.path
+    : (targetDirectory === undefined ? null : join(targetDirectory, fileName ?? DEFAULT_FILE_NAMES.zh))
+  if (verifyExecution && targetPath !== null && installed.owned && platform === 'win32') {
     execution = await deps.verifyLauncherByRunning(targetPath, { run: deps.run, env, signal, platform })
     checks.push(execution.ok
       ? check('launcher-execution', 'ok', `dry run exited ${String(execution.exitCode)}`)

@@ -31,7 +31,7 @@ import {
 } from './validate.js'
 
 /** Plugin version recorded in every generated launcher. */
-export const PLUGIN_VERSION = '1.0.0'
+export const PLUGIN_VERSION = '1.1.0'
 
 /** Default launcher name per resolved language. */
 const DEFAULT_FILE_NAMES = Object.freeze({ zh: '启动 DeepSeek Harness.bat', en: 'Launch DeepSeek Harness.bat' })

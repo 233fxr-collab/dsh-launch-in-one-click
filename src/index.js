@@ -37,6 +37,7 @@ export const Config = z.object({
   packageSpec: z.string().default('@deepseek-ai/dsh'),
   openBrowser: z.boolean().default(true),
   provisionOnLoad: z.boolean().default(true),
+  autoUpdate: z.boolean().default(true),
 })
 
 /** Nullable string in the tool-schema DSL. */
@@ -161,13 +162,16 @@ export function apply(ctx, config) {
     packageSpec: config?.packageSpec ?? '@deepseek-ai/dsh',
     openBrowser: config?.openBrowser ?? true,
     provisionOnLoad: config?.provisionOnLoad ?? true,
+    autoUpdate: config?.autoUpdate ?? true,
   }
 
   // The marketplace hot-mounts a plugin whose bundle patch is a plain insert, so
-  // this runs the moment someone clicks Install. The plugin's promise is a
-  // launcher on the Desktop, so that is when it appears — created only when the
-  // Desktop has none, never replacing anything, and never blocking the load.
-  if (deployment.provisionOnLoad) {
+  // this runs the moment someone clicks Install and on every start after that.
+  // The plugin's promise is a launcher on the Desktop, so that is when it
+  // appears — and a launcher written by an older build is brought up to this
+  // one's template, keeping the settings recorded inside it. Nothing here blocks
+  // the load, and nothing here throws.
+  if (deployment.provisionOnLoad || deployment.autoUpdate) {
     void provisionLauncher({
       port: deployment.defaultPort,
       workdir: process.cwd(),
@@ -175,6 +179,8 @@ export function apply(ctx, config) {
       language: deployment.language,
       packageSpec: deployment.packageSpec,
       openBrowser: deployment.openBrowser,
+      provisionOnLoad: deployment.provisionOnLoad,
+      autoUpdate: deployment.autoUpdate,
     }).then((outcome) => {
       const line = describeProvision(outcome)
       if (line === null) return

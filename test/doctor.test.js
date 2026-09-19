@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { parseNodeVersion, runDoctor } from '../src/doctor.js'
 import { installLauncher } from '../src/install.js'
+import { PLUGIN_VERSION } from '../src/install.js'
 
 let directory
 
@@ -127,7 +128,7 @@ test('an installed launcher is recognized with its version', async () => {
   )
   const report = await runDoctor({ fileName: 'doctor-installed.bat' }, deps())
   assert.equal(report.installed, 'ours')
-  assert.equal(report.launcherVersion, '1.0.0')
+  assert.equal(report.launcherVersion, PLUGIN_VERSION, 'a launcher this build wrote reports this build\u2019s version')
   assert.equal(report.checks.find((entry) => entry.id === 'launcher').status, 'ok')
 })
 

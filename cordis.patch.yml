@@ -13,7 +13,9 @@
 #   runner           npx                 npx | dsh — how the generated launcher starts the harness
 #   packageSpec      '@deepseek-ai/dsh'  package the npx runner resolves
 #   openBrowser      true                let `dsh web` open the browser itself
-#   provisionOnLoad  true                create the launcher on load, when absent, never replacing
+#   provisionOnLoad  true                create the launcher on load, when absent
+#   autoUpdate       true                refresh a launcher an earlier build wrote, keeping
+#                                        the settings recorded inside it
 #
 # Removing the row (or the whole bundle) leaves an installed launcher .bat
 # working: the launcher is self-contained and never imports this package.

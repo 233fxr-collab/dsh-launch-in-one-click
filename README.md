@@ -24,6 +24,27 @@ is not a decision by you. Replacing one stays an explicit action (`/launch`, or
 the `launcher_install` tool). Set `provisionOnLoad: false` to have the plugin
 load silently instead.
 
+### It also keeps that launcher current
+
+A launcher records the version of the plugin that wrote it. When a later build of
+this plugin loads and finds a launcher written by an earlier one, it rewrites the
+file with the current template — that is how a repaired message or a fixed
+code-page path reaches a Desktop instead of living only in the repository.
+
+The rewrite is of *that* launcher: the port, workspace, runner, language, and
+browser behaviour recorded inside it are carried over, so refreshing a template
+can never move your setup. Changing settings stays an explicit `/launch`. Set
+`autoUpdate: false` to keep the file frozen; the doctor still reports when it is
+out of date.
+
+Two things this deliberately does **not** touch: a launcher whose recorded
+version already matches, and one whose version cannot be read — a guess is how a
+hand edit gets lost.
+
+The launcher also starts the newest *harness* on every run, because
+`npx @deepseek-ai/dsh` resolves the published version each time rather than
+pinning whatever was current when the file was written.
+
 ### What the install does
 
 `launcher_install` resolves your Desktop the way Windows defines it (including a
@@ -133,6 +154,7 @@ Optional, in the bundle's patch row:
     packageSpec: '@deepseek-ai/dsh'  # what npx resolves
     openBrowser: true                # let `dsh web` open the browser
     provisionOnLoad: true            # create the launcher on load, if absent
+    autoUpdate: true                 # refresh a launcher written by an older build
 ```
 
 ⚠️ **Adding a `config:` row here has a cost.** A marketplace hot-mounts only a

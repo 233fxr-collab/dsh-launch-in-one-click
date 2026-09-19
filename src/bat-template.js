@@ -123,7 +123,7 @@ export function renderLauncher(spec) {
     `rem  ${m.windowTitle}`,
     `${MARKER_LINE} v${version}`,
     `rem  @config port=${String(port)} runner=${runner} lang=${language} cp=${String(codePage)}`
-      + ` generated=${generatedAt} workdir="${directory}"`,
+      + ` openBrowser=${noOpen === '1' ? '0' : '1'} generated=${generatedAt} workdir="${directory}"`,
     'rem',
     'rem  This file is self-contained: it does not import the plugin that wrote',
     'rem  it, so uninstalling the plugin leaves this launcher working.',
